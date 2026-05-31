@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bảng điều khiển – NguyenNamChat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="dashboard-body">
+
+<!-- ====== PAGE SELECTION MODAL (After FB Login) ====== -->
+<div class="fb-modal-overlay hidden" id="page-select-modal">
+  <div class="fb-modal-card" id="page-select-card">
+    <div class="fb-card-header">
+      <div class="fb-meta-logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="#1877f2"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+      </div>
+      <div class="fb-user-selector" id="fb-user-name-display">Đang tải...</div>
+    </div>
+    
+    <div class="fb-card-body" style="padding-top:10px">
+      <h3 style="font-size:18px;margin-bottom:12px">Chọn Fanpage để kết nối Chatbot</h3>
+      <p style="font-size:12.5px;color:#65676b;margin-bottom:16px">Chọn các Trang bạn muốn kích hoạt chatbot AI tự động:</p>
+      
+      <!-- Pages will be loaded dynamically here -->
+      <div class="fb-page-list" id="fb-real-page-list">
+        <div style="text-align:center;padding:30px;color:#65676b;">
+          <div style="font-size:24px;margin-bottom:8px">⏳</div>
+          Đang tải danh sách Fanpage...
+        </div>
+      </div>
+
+      <div class="fb-btn-row" style="margin-top:20px">
+        <button class="fb-btn-grey" onclick="cancelPageSelect()">Hủy</button>
+        <button class="fb-btn-blue" id="btn-connect-pages" onclick="connectSelectedPages()">Kết nối Fanpage</button>
+      </div>
+      
+      <div id="connect-status" style="margin-top:12px;font-size:13px;text-align:center"></div>
+
+      <div style="margin-top: 14px; text-align: center; font-size: 12.5px; color: #64748b; border-top: 1px dashed #e2e8f0; padding-top: 12px;">
+        Không thấy đủ Fanpage của bạn? <br>
+        <a href="#" onclick="reauthorizeFacebook()" style="color: #1877f2; text-decoration: none; font-weight: 600; display: inline-block; margin-top: 4px;">🔄 Bấm vào đây để cấp lại quyền Facebook</a>
+      </div>
+
+      <div class="fb-footer-links" style="margin-top:24px">
+        <a href="#">Chính sách quyền riêng tư</a> và <a href="#">Điều khoản</a> của NguyenNamChat
+        <span style="float:right"><a href="#">Trung tâm trợ giúp</a></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== DASHBOARD PAGE ====== -->
+<div class="page-wrapper" id="dashboard-page">
+
+  <!-- ====== LEFT PANEL ====== -->
+  <div class="left-panel">
+
+    <div class="panel-header">
+      <div class="panel-logo">🤖</div>
+      <div>
+        <h1>NNA Chat Control Panel</h1>
+        <p>Cấu hình kịch bản & AI</p>
+      </div>
+    </div>
+
+    <!-- Connected Pages Info -->
+    <div class="connected-pages-bar" id="connected-pages-bar" style="display:none">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:6px">📡 Chọn Fanpage cấu hình:</div>
+      <select id="active-page-select" class="settings-input" style="background:#1e293b;color:#10b981;border:1px solid #334155;font-weight:600;padding:8px 12px;width:100%;border-radius:8px;font-size:14px;cursor:pointer;outline:none;" onchange="changeActivePage(this.value)"></select>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('script')" id="tab-script">📋 Kịch bản</button>
+      <button class="tab-btn" onclick="switchTab('settings')" id="tab-settings">⚙️ Cài đặt</button>
+      <button class="tab-btn" onclick="switchTab('users')" id="tab-users">👥 Người dùng <span id="user-badge" class="badge" style="display:none">0</span></button>
+      <button class="tab-btn" onclick="switchTab('orders')" id="tab-orders">📦 Đơn hàng <span id="order-badge" class="badge" style="display:none">0</span></button>
+    </div>
+
+    <!-- TAB: Script -->
+    <div class="tab-content active" id="content-script">
+      <div class="script-header">
+        <p class="script-desc">✏️ Viết kịch bản bên dưới. AI sẽ <b>ghi nhớ toàn bộ</b> và trả lời khách theo đúng nội dung này.</p>
+        <div class="script-actions">
+          <button class="btn-outline" onclick="loadSample()">📄 Nạp mẫu</button>
+          <button class="btn-outline" onclick="clearScript()">🗑 Xóa</button>
+        </div>
+      </div>
+
+      <textarea
+        id="script-input"
+        class="script-textarea"
+        placeholder="Ví dụ:
+Bạn là nhân viên tư vấn của Shop ABC...
+..."
+        spellcheck="false"
+      ></textarea>
+
+      <div class="script-tips">
+        <div class="tip-title">💡 Nên viết kịch bản gồm:</div>
+        <div class="tips-grid">
+          <div class="tip-item">🏪 Tên shop & mô tả</div>
+          <div class="tip-item">📦 Dịch vụ + giá</div>
+          <div class="tip-item">📜 Chính sách thanh toán</div>
+          <div class="tip-item">🗣 Cách xưng hô, giọng điệu</div>
+          <div class="tip-item">🚫 Điều không được nói</div>
+          <div class="tip-item">📞 Khi nào chuyển hotline</div>
+        </div>
+      </div>
+
+      <button class="btn-apply" onclick="applyScript()">
+        ✅ Áp dụng kịch bản
+      </button>
+      <div id="apply-status"></div>
+    </div>
+
+    <!-- TAB: Settings -->
+    <div class="tab-content" id="content-settings">
+      <div class="settings-group">
+        <label class="settings-label">🔑 Groq API Key (Miễn phí)</label>
+        <div class="key-row">
+          <input type="password" id="grok-key" placeholder="gsk_..." />
+          <button onclick="saveKey()">Lưu</button>
+        </div>
+        <a href="https://console.groq.com" target="_blank" class="get-key-link">→ Lấy API Key miễn phí tại console.groq.com</a>
+        <span id="key-status"></span>
+      </div>
+
+      <div class="settings-group">
+        <label class="settings-label">🏪 Tên shop hiển thị</label>
+        <input type="text" id="shop-name-input" class="settings-input" value="Nguyễn Nam Ads" placeholder="Tên shop của bạn" />
+      </div>
+
+      <div class="settings-group">
+        <label class="settings-label">🌐 Server Backend URL</label>
+        <input type="text" id="server-url-input" class="settings-input" placeholder="http://localhost:3000" />
+        <span style="font-size:11px;color:#94a3b8">URL server Node.js đang chạy (để gửi kịch bản + kết nối page)</span>
+      </div>
+
+      <div class="settings-group">
+        <label class="settings-label">🤖 Model AI</label>
+        <select id="model-select" class="settings-input">
+          <option value="llama-3.3-70b-versatile">Llama 3.3 70B ⚡ (Nhanh, thông minh)</option>
+          <option value="llama-3.1-8b-instant">Llama 3.1 8B 🚀 (Siêu nhanh)</option>
+        </select>
+      </div>
+
+      <div class="settings-group">
+        <label class="settings-label">🌡 Độ sáng tạo (Temperature)</label>
+        <div class="slider-row">
+          <span>Chính xác</span>
+          <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7" />
+          <span>Sáng tạo</span>
+        </div>
+        <div class="slider-val">Giá trị: <b id="temp-val">0.7</b></div>
+      </div>
+
+      <button class="btn-apply" onclick="saveSettings()">💾 Lưu cài đặt</button>
+      <div id="settings-status"></div>
+
+      <!-- VÙNG NGUY HIỂM: RESET HỆ THỐNG -->
+      <div class="settings-group" style="margin-top: 30px; border-top: 1px solid #334155; padding-top: 20px;">
+        <label class="settings-label" style="color: #ef4444;">🚨 Vùng nguy hiểm</label>
+        <p style="font-size: 11px; color: #94a3b8; margin-bottom: 12px; line-height: 1.4;">Xóa sạch toàn bộ Fanpage đã kết nối, lịch sử đơn hàng và khôi phục cài đặt mặc định.</p>
+        <button class="btn-apply" style="background: #ef4444; border-color: #ef4444; color: #fff;" onclick="resetAllSystemData()">🚨 Reset toàn bộ tài khoản</button>
+      </div>
+    </div>
+
+    <!-- TAB: Users (Platform User Management) -->
+    <div class="tab-content" id="content-users">
+      <div style="padding:12px 0 8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <span style="font-size:13px;color:#94a3b8">👥 Quản lý người dùng platform</span>
+          <button class="btn-outline" onclick="loadPlatformUsers()" style="font-size:11px;padding:4px 10px">🔄 Làm mới</button>
+        </div>
+
+        <!-- Stats row -->
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <div style="flex:1;background:#1e293b;border-radius:8px;padding:10px;text-align:center">
+            <div id="pu-stat-total" style="font-size:22px;font-weight:700;color:#10b981">0</div>
+            <div style="font-size:10px;color:#64748b">Tổng users</div>
+          </div>
+          <div style="flex:1;background:#1e293b;border-radius:8px;padding:10px;text-align:center">
+            <div id="pu-stat-active" style="font-size:22px;font-weight:700;color:#1877f2">0</div>
+            <div style="font-size:10px;color:#64748b">Đang active</div>
+          </div>
+          <div style="flex:1;background:#1e293b;border-radius:8px;padding:10px;text-align:center">
+            <div id="pu-stat-expired" style="font-size:22px;font-weight:700;color:#ef4444">0</div>
+            <div style="font-size:10px;color:#64748b">Hết hạn</div>
+          </div>
+        </div>
+
+        <!-- User list -->
+        <div id="platform-users-list" style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding-right:2px">
+          <div style="text-align:center;padding:30px;color:#64748b">
+            <div style="font-size:28px">👥</div>
+            <p style="font-size:12px">Chưa có người dùng nào.<br>Khi khách đăng nhập Facebook sẽ hiện ở đây.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Edit User -->
+    <div id="edit-user-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;display:none">
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:24px;width:320px;max-width:95vw">
+        <h3 style="margin:0 0 16px;font-size:16px;color:#f1f5f9">✏️ Chỉnh sửa tài khoản</h3>
+        <input type="hidden" id="edit-user-id" />
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px">👤 Tên người dùng</label>
+          <div id="edit-user-name" style="font-size:14px;font-weight:600;color:#f1f5f9;padding:8px;background:#0f172a;border-radius:8px"></div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px">📅 Gia hạn đến ngày</label>
+          <input type="date" id="edit-expiry-date" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px;color:#f1f5f9;font-size:14px;box-sizing:border-box" />
+        </div>
+        <div style="margin-bottom:16px">
+          <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px">📦 Gói dịch vụ</label>
+          <select id="edit-plan" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px;color:#f1f5f9;font-size:14px;box-sizing:border-box">
+            <option value="trial">🆓 Dùng thử (Trial)</option>
+            <option value="basic">🥈 Basic</option>
+            <option value="pro">🥇 Pro</option>
+            <option value="enterprise">💎 Enterprise</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button onclick="saveEditUser()" style="flex:1;background:#1877f2;border:none;border-radius:8px;padding:10px;color:#fff;font-weight:600;cursor:pointer;font-size:13px">💾 Lưu</button>
+          <button onclick="closeEditUserModal()" style="flex:1;background:#334155;border:none;border-radius:8px;padding:10px;color:#94a3b8;font-weight:600;cursor:pointer;font-size:13px">Hủy</button>
+        </div>
+        <div id="edit-user-status" style="margin-top:10px;font-size:12px;text-align:center"></div>
+      </div>
+    </div>
+
+
+    <!-- TAB: Orders -->
+    <div class="tab-content" id="content-orders">
+      <div id="orders-empty" class="empty-state">
+        <div style="font-size:40px">📭</div>
+        <p>Chưa có đơn hàng nào.<br>Thử chat và đặt hàng để xem!</p>
+      </div>
+      <div id="orders-list"></div>
+    </div>
+    
+    <!-- Logout Button -->
+    <button class="btn-logout" onclick="handleLogout()">🚪 Đăng xuất</button>
+
+  </div>
+
+  <!-- ====== RIGHT PANEL: Messenger Chat ====== -->
+  <div class="messenger-wrapper">
+
+    <!-- Header -->
+    <div class="ms-header">
+      <div class="ms-avatar-wrap">
+        <div class="ms-avatar-circle" id="shop-avatar-initial">N</div>
+        <span class="ms-online-dot"></span>
+      </div>
+      <div class="ms-header-info">
+        <div class="ms-name" id="ms-shop-name">Nguyễn Nam Ads</div>
+        <div class="ms-status" id="ms-status">🟢 Đang hoạt động</div>
+      </div>
+      <div class="ms-header-icons">
+        <button class="ms-icon-btn" title="Xóa hội thoại" onclick="clearChat()">🗑</button>
+        <button class="ms-icon-btn" title="Thông tin" onclick="switchTab('settings')">⚙️</button>
+      </div>
+    </div>
+
+    <!-- Script status bar -->
+    <div class="script-status-bar" id="script-status-bar">
+      ⚠️ Chưa có kịch bản. Hãy viết kịch bản ở tab <b>📋 Kịch bản</b> bên trái rồi nhấn <b>Áp dụng</b>.
+    </div>
+
+    <!-- Messages -->
+    <div class="ms-messages" id="ms-messages"></div>
+
+    <!-- Suggestions -->
+    <div class="suggestions-bar" id="suggestions-bar">
+      <div class="suggestions-label">Gợi ý thử:</div>
+      <div class="suggestions-list" id="suggestions-list">
+        <div class="suggest-chip" onclick="sendSuggest(this)">📈 Dịch vụ Ads Facebook</div>
+        <div class="suggest-chip" onclick="sendSuggest(this)">💰 Phí dịch vụ quảng cáo</div>
+        <div class="suggest-chip" onclick="sendSuggest(this)">🤝 Cam kết hiệu quả</div>
+        <div class="suggest-chip" onclick="sendSuggest(this)">📞 Hotline liên hệ</div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="ms-input-area">
+      <div class="ms-input-wrap">
+        <input
+          type="text"
+          id="ms-input"
+          placeholder="Aa"
+          autocomplete="off"
+          onkeydown="handleKey(event)"
+        />
+        <button class="ms-emoji-btn">😊</button>
+      </div>
+      <button class="ms-send-btn" id="ms-send-btn" onclick="sendMessage()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+      </button>
+    </div>
+
+  </div>
+
+</div>
+
+
+
+<script src="app.js"></script>
+</body>
+</html>

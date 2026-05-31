@@ -1,0 +1,25 @@
+# Node modules
+node_modules/
+npm-debug.log*
+
+# Environment variables (sensitive!)
+.env
+*.env
+config.json
+
+# Logs
+*.log
+ngrok.log
+ngrok.err
+ngrok_run.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# ngrok binary
+ngrok.exe
+
+# Temporary files
+*.tmp
+*.temp

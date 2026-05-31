@@ -1,0 +1,1736 @@
+// =============================================
+//  CHATBOT DATA & CONFIG
+// =============================================
+
+let SHOP_NAME = "Nguyễn Nam Ads";
+let BOT_AVATAR = "https://ui-avatars.com/api/?name=Nguyen+Nam+Ads&background=1877f2&color=fff&size=28";
+let SERVER_URL = localStorage.getItem('server_url') || ((window.location.protocol !== 'file:') ? window.location.origin : 'http://localhost:3000');
+
+const PRODUCTS = [
+  {
+    id: "ads-budget",
+    name: "Tối ưu ngân sách Ads",
+    emoji: "📈",
+    price: 500000,
+    priceStr: "Từ 500.000đ/ngày",
+    battery: "Nhận phí sau khi hiệu quả",
+    waterproof: "Thanh toán ngân sách theo ngày",
+    warranty: "Tối ưu tối đa chuyển đổi",
+    desc: "Chạy quảng cáo Facebook tối ưu chi phí, tiếp cận đúng khách hàng mục tiêu, cam kết hỗ trợ tối đa.",
+    stars: "⭐⭐⭐⭐⭐ (4.9/5)",
+    sold: "150+ dự án"
+  },
+  {
+    id: "content-design",
+    name: "Thiết kế bài viết & Fanpage",
+    emoji: "🎨",
+    price: 300000,
+    priceStr: "Từ 300.000đ/bài",
+    battery: "Không phí trước",
+    waterproof: "Hỗ trợ Marketing chuyên nghiệp",
+    warranty: "Chỉnh sửa nội dung miễn phí",
+    desc: "Thiết kế hình ảnh chuyên nghiệp, viết bài quảng cáo và tối ưu Fanpage chuẩn chỉnh.",
+    stars: "⭐⭐⭐⭐⭐ (4.8/5)",
+    sold: "800+ bài viết"
+  }
+];
+
+// =============================================
+//  STATE MACHINE
+// =============================================
+const STATE = {
+  IDLE: "idle",
+  SHOW_PRODUCTS: "show_products",
+  SHOW_DETAIL: "show_detail",
+  CONFIRM_ORDER: "confirm_order",
+  COLLECT_NAME: "collect_name",
+  COLLECT_PHONE: "collect_phone",
+  COLLECT_ADDRESS: "collect_address",
+  DONE: "done"
+};
+
+let state = STATE.IDLE;
+let selectedProduct = null;
+let orderData = {};
+let orders = [];
+let groqApiKey = "";
+let isTyping = false;
+
+// Facebook auth data (real)
+let fbUserAccessToken = null;
+let fbUserId = null;
+let fbUserName = null;
+let fbPages = []; // [{id, name, access_token, picture}]
+let connectedPages = []; // pages that have been connected to our server
+
+// =============================================
+//  INTENT DETECTION (keywords)
+// =============================================
+const INTENTS = {
+  greeting: ["chào", "hello", "hi", "alo", "hey", "xin chào"],
+  ask_products: ["dịch vụ", "báo giá", "bên mình", "chạy quảng cáo", "ads", "xem gói", "gói chạy"],
+  ask_price: ["giá", "bao nhiêu tiền", "giá cả", "bao nhiêu", "phí", "ngân sách"],
+  want_order: ["chạy", "muốn chạy", "đăng ký", "hợp tác", "tư vấn", "lấy gói", "muốn tư vấn"],
+  ask_warranty: ["cam kết", "hiệu quả", "uy tín"],
+  ask_shipping: ["thanh toán", "cọc", "thu phí trước", "ngân sách theo ngày"],
+};
+
+function detectIntent(text) {
+  const lower = text.toLowerCase();
+  for (const [intent, keywords] of Object.entries(INTENTS)) {
+    if (keywords.some(k => lower.includes(k))) return intent;
+  }
+  return null;
+}
+
+function findProduct(text) {
+  const lower = text.toLowerCase();
+  return PRODUCTS.find(p =>
+    lower.includes(p.name.toLowerCase()) ||
+    lower.includes(p.id) ||
+    lower.includes("quảng cáo") && p.id === "ads-budget" ||
+    lower.includes("thiết kế") && p.id === "content-design"
+  );
+}
+
+// =============================================
+//  UI HELPERS
+// =============================================
+function scrollToBottom() {
+  const container = document.getElementById("ms-messages");
+  container.scrollTop = container.scrollHeight;
+}
+
+function addDateDivider(text) {
+  const div = document.createElement("div");
+  div.className = "date-divider";
+  div.textContent = text;
+  document.getElementById("ms-messages").appendChild(div);
+  scrollToBottom();
+}
+
+function showTyping() {
+  removeTyping();
+  const container = document.getElementById("ms-messages");
+  const row = document.createElement("div");
+  row.className = "msg-row bot";
+  row.id = "typing-row";
+  row.innerHTML = `
+    <img class="bot-avatar-small" src="${BOT_AVATAR}" alt="bot" />
+    <div class="typing-bubble">
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+    </div>`;
+  container.appendChild(row);
+  scrollToBottom();
+}
+
+function removeTyping() {
+  const el = document.getElementById("typing-row");
+  if (el) el.remove();
+}
+
+function appendBotBubble(htmlContent, isHtml = false) {
+  const container = document.getElementById("ms-messages");
+  const row = document.createElement("div");
+  row.className = "msg-row bot";
+
+  if (isHtml) {
+    row.innerHTML = `
+      <img class="bot-avatar-small" src="${BOT_AVATAR}" alt="bot" />
+      <div>${htmlContent}</div>`;
+  } else {
+    row.innerHTML = `
+      <img class="bot-avatar-small" src="${BOT_AVATAR}" alt="bot" />
+      <div class="bubble bot">${htmlContent}</div>`;
+  }
+
+  container.appendChild(row);
+  scrollToBottom();
+}
+
+function appendUserBubble(text) {
+  const container = document.getElementById("ms-messages");
+  const row = document.createElement("div");
+  row.className = "msg-row user";
+  row.innerHTML = `<div class="bubble user">${escHtml(text)}</div>`;
+  container.appendChild(row);
+  scrollToBottom();
+}
+
+function appendQuickReplies(options) {
+  const container = document.getElementById("ms-messages");
+  const div = document.createElement("div");
+  div.className = "quick-replies";
+  div.id = "qr-area";
+  options.forEach(opt => {
+    const btn = document.createElement("button");
+    btn.className = "qr-btn";
+    btn.textContent = opt.label;
+    btn.onclick = () => {
+      document.getElementById("qr-area")?.remove();
+      appendUserBubble(opt.label);
+      setTimeout(() => processMessage(opt.value || opt.label), 600);
+    };
+    div.appendChild(btn);
+  });
+  container.appendChild(div);
+  scrollToBottom();
+}
+
+function appendProductCards(products) {
+  const container = document.getElementById("ms-messages");
+  const row = document.createElement("div");
+  row.className = "msg-row bot";
+
+  const cards = products.map(p => `
+    <div class="product-card">
+      <div class="product-card-img">${p.emoji}</div>
+      <div class="product-card-body">
+        <div class="product-card-name">${p.name}</div>
+        <div class="product-card-price">${p.priceStr}</div>
+        <div class="product-card-sub">${p.waterproof} • BH ${p.warranty}</div>
+        <div class="product-card-sub">${p.stars}</div>
+      </div>
+      <button class="product-card-btn" onclick="selectProduct('${p.id}')">Xem chi tiết →</button>
+    </div>
+  `).join("");
+
+  row.innerHTML = `
+    <img class="bot-avatar-small" src="${BOT_AVATAR}" alt="bot" style="align-self:flex-start;margin-top:4px"/>
+    <div class="product-cards">${cards}</div>`;
+  container.appendChild(row);
+  scrollToBottom();
+}
+
+function appendOrderConfirm(order) {
+  const container = document.getElementById("ms-messages");
+  const row = document.createElement("div");
+  row.className = "msg-row bot";
+  row.innerHTML = `
+    <img class="bot-avatar-small" src="${BOT_AVATAR}" alt="bot" />
+    <div class="order-confirm">
+      <div class="confirm-title">✅ Đơn hàng đã được ghi nhận!</div>
+      <div>👤 <b>${escHtml(order.name)}</b></div>
+      <div>📞 ${escHtml(order.phone)}</div>
+      <div>📍 ${escHtml(order.address)}</div>
+      <div>📦 ${escHtml(order.product)}</div>
+      <div class="confirm-row"><span>Tổng thanh toán:</span><span>${escHtml(order.price)}</span></div>
+      <div style="font-size:12px;margin-top:8px;opacity:0.85">🚚 Miễn ship nội thành · Shop sẽ gọi xác nhận trong 30 phút!</div>
+    </div>`;
+  container.appendChild(row);
+  scrollToBottom();
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// =============================================
+//  BOT DELAY & RESPOND
+// =============================================
+async function botRespond(fn, delay = 1200) {
+  if (isTyping) return;
+  isTyping = true;
+  showTyping();
+  await new Promise(r => setTimeout(r, delay));
+  removeTyping();
+  fn();
+  isTyping = false;
+}
+
+// =============================================
+//  GROQ AI CALL
+// =============================================
+async function callGroqAI(userMessage) {
+  let keyToUse = groqApiKey;
+  let modelToUse = "llama-3.3-70b-versatile";
+  let tempToUse = 0.7;
+  let systemPrompt = localStorage.getItem('chatbot_script') || '';
+  
+  // Use config on screen
+  const keyInput = document.getElementById('grok-key');
+  if (keyInput && keyInput.value.trim()) keyToUse = keyInput.value.trim();
+  
+  const modelSelect = document.getElementById('model-select');
+  if (modelSelect) modelToUse = modelSelect.value;
+  
+  const tempSlider = document.getElementById('temperature');
+  if (tempSlider) tempToUse = parseFloat(tempSlider.value);
+
+  if (!keyToUse) return null;
+  
+  if (!systemPrompt) {
+    const productList = PRODUCTS.map(p =>
+      `- ${p.name}: ${p.priceStr}, ${p.waterproof}, bảo hành ${p.warranty}`
+    ).join("\n");
+    systemPrompt = `Bạn là chatbot bán hàng của "${SHOP_NAME}", chuyên bán máy cao râu. 
+Trả lời ngắn gọn, thân thiện, dùng tiếng Việt. Dùng emoji phù hợp.
+Sản phẩm hiện có:\n${productList}
+Chính sách: Miễn ship nội thành, bảo hành theo sản phẩm, đổi trả 7 ngày.
+Nếu khách muốn đặt hàng, hãy hướng dẫn họ gõ "đặt hàng".`;
+  }
+
+  try {
+    const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${keyToUse}`
+      },
+      body: JSON.stringify({
+        model: modelToUse,
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt
+          },
+          { role: "user", content: userMessage }
+        ],
+        temperature: tempToUse,
+        max_tokens: 400
+      })
+    });
+    const data = await resp.json();
+    return data.choices?.[0]?.message?.content || null;
+  } catch(e) {
+    return null;
+  }
+}
+
+// =============================================
+//  MAIN PROCESS MESSAGE
+// =============================================
+async function processMessage(text) {
+  const customScript = localStorage.getItem('chatbot_script');
+  if (customScript && state !== STATE.COLLECT_NAME && state !== STATE.COLLECT_PHONE && state !== STATE.COLLECT_ADDRESS) {
+    if (groqApiKey) {
+      showTyping();
+      const aiReply = await callGroqAI(text);
+      removeTyping();
+      if (aiReply) {
+        appendBotBubble(escHtml(aiReply).replace(/\n/g, "<br>"));
+        return;
+      }
+    }
+  }
+
+  const intent = detectIntent(text);
+  const product = findProduct(text);
+
+  // --- STATE: Collecting order info ---
+  if (state === STATE.COLLECT_NAME) {
+    orderData.name = text;
+    state = STATE.COLLECT_PHONE;
+    await botRespond(() => {
+      appendBotBubble(`Cảm ơn <b>${escHtml(text)}</b>! 📞 Vui lòng cho shop biết <b>số điện thoại</b> của bạn:`);
+    });
+    return;
+  }
+
+  if (state === STATE.COLLECT_PHONE) {
+    if (!/[0-9]{9,11}/.test(text.replace(/\s/g,""))) {
+      await botRespond(() => {
+        appendBotBubble("⚠️ Số điện thoại chưa đúng định dạng. Vui lòng nhập lại (ví dụ: 0909123456):");
+      }, 800);
+      return;
+    }
+    orderData.phone = text;
+    state = STATE.COLLECT_ADDRESS;
+    await botRespond(() => {
+      appendBotBubble("📍 Cuối cùng, cho shop biết <b>địa chỉ giao hàng</b> của bạn nhé:");
+    });
+    return;
+  }
+
+  if (state === STATE.COLLECT_ADDRESS) {
+    orderData.address = text;
+    const order = {
+      ...orderData,
+      product: selectedProduct.name,
+      price: selectedProduct.priceStr,
+      time: new Date().toLocaleString("vi-VN")
+    };
+    orders.push(order);
+    state = STATE.DONE;
+    saveOrder(order);
+    await botRespond(() => {
+      appendOrderConfirm(order);
+    }, 1000);
+    setTimeout(() => {
+      appendQuickReplies([
+        { label: "🛍 Xem sản phẩm khác", value: "xem sản phẩm" },
+        { label: "📞 Liên hệ shop", value: "liên hệ" }
+      ]);
+      state = STATE.IDLE;
+    }, 1200);
+    return;
+  }
+
+  // --- STATE: Confirm order ---
+  if (state === STATE.CONFIRM_ORDER) {
+    if (/có|ok|đồng ý|xác nhận|muốn|đặt/i.test(text)) {
+      state = STATE.COLLECT_NAME;
+      await botRespond(() => {
+        appendBotBubble(`Tuyệt vời! 🎉 Để hoàn tất đơn hàng, vui lòng cho shop biết <b>họ tên</b> của bạn:`);
+      });
+      return;
+    } else if (/không|thôi|hủy/i.test(text)) {
+      state = STATE.IDLE;
+      await botRespond(() => {
+        appendBotBubble("Không sao ạ! 😊 Nếu cần tư vấn thêm, bạn cứ nhắn cho shop nhé~");
+      }, 800);
+      return;
+    }
+  }
+
+  // --- INTENT: Greeting ---
+  if (intent === "greeting" || text.trim().length < 3) {
+    state = STATE.IDLE;
+    await botRespond(() => {
+      appendBotBubble(`Chào bạn! 👋 Mình là trợ lý tự động của <b>${SHOP_NAME}</b>.<br>Bạn cần tư vấn về dịch vụ quảng cáo ạ?`);
+      appendQuickReplies([
+        { label: "📈 Dịch vụ Ads Facebook", value: "chạy quảng cáo" },
+        { label: "💰 Báo giá chi phí", value: "chi phí" },
+        { label: "🤝 Cam kết hiệu quả", value: "cam kết hiệu quả" }
+      ]);
+    }, 800);
+    return;
+  }
+
+  // --- INTENT: Ask products / ads ---
+  if (intent === "ask_products" || intent === "ask_price") {
+    state = STATE.SHOW_PRODUCTS;
+    await botRespond(() => {
+      appendBotBubble("Dạ bên em đang cung cấp các **dịch vụ Marketing chuyên nghiệp** sau ạ: 🔥");
+    }, 900);
+    setTimeout(async () => {
+      showTyping();
+      await new Promise(r => setTimeout(r, 800));
+      removeTyping();
+      appendProductCards(PRODUCTS);
+      appendQuickReplies([
+        { label: "🏆 Xem Tối ưu Ads", value: "Tối ưu ngân sách Ads" },
+        { label: "🎨 Xem Thiết kế Fanpage", value: "Thiết kế bài viết & Fanpage" }
+      ]);
+    }, 1200);
+    return;
+  }
+
+  // --- INTENT: Want to order ---
+  if (intent === "want_order") {
+    if (!selectedProduct) {
+      state = STATE.SHOW_PRODUCTS;
+      await botRespond(() => {
+        appendBotBubble("Bạn muốn đăng ký dịch vụ nào ạ? Bên em có các gói chính sau:");
+        appendProductCards(PRODUCTS);
+      });
+      return;
+    }
+    state = STATE.CONFIRM_ORDER;
+    await botRespond(() => {
+      appendBotBubble(`
+        Bạn muốn đăng ký gói <b>${selectedProduct.name}</b> – <span style="color:#e94560;font-weight:700">${selectedProduct.priceStr}</span> đúng không ạ?
+      `);
+      appendQuickReplies([
+        { label: "✅ Xác nhận đăng ký", value: "có đặt" },
+        { label: "❌ Chọn dịch vụ khác", value: "dịch vụ" }
+      ]);
+    });
+    return;
+  }
+
+  // --- INTENT: Ask warranty ---
+  if (intent === "ask_warranty") {
+    await botRespond(() => {
+      appendBotBubble(`🛡 Chính sách cam kết của bên em:<br>
+        • Cam kết tối ưu chi phí quảng cáo, hỗ trợ tối đa chuyển đổi ra đơn hàng.<br>
+        • Báo cáo ngân sách chi tiết hàng ngày.<br>
+        • Đồng hành, hỗ trợ thiết kế bài viết chuẩn ads.`);
+    }, 900);
+    return;
+  }
+
+  // --- INTENT: Ask shipping ---
+  if (intent === "ask_shipping") {
+    await botRespond(() => {
+      appendBotBubble(`💳 Quy trình thanh toán tại shop:<br>
+        • Thanh toán ngân sách quảng cáo theo ngày.<br>
+        • **Không phí trước** - chạy hiệu quả mới tính phí dịch vụ.<br>
+        • Quy trình rõ ràng, minh bạch giúp bạn hoàn toàn an tâm!`);
+    }, 900);
+    return;
+  }
+
+  // --- Product found in text ---
+  if (product) {
+    selectProduct(product.id, false);
+    return;
+  }
+
+  // --- AI fallback ---
+  if (groqApiKey) {
+    showTyping();
+    const aiReply = await callGroqAI(text);
+    removeTyping();
+    if (aiReply) {
+      appendBotBubble(escHtml(aiReply).replace(/\n/g, "<br>"));
+      appendQuickReplies([
+        { label: "📈 Dịch vụ Ads", value: "dịch vụ" },
+        { label: "🤝 Đăng ký ngay", value: "tư vấn" }
+      ]);
+      return;
+    }
+  }
+
+  // --- Default fallback ---
+  await botRespond(() => {
+    appendBotBubble("Dạ bên em chưa hiểu rõ ý bạn lắm 😅 Bạn có thể chọn:");
+    appendQuickReplies([
+      { label: "📈 Xem dịch vụ Ads", value: "dịch vụ" },
+      { label: "💰 Báo giá chi tiết", value: "chi phí" },
+      { label: "🤝 Chính sách cam kết", value: "cam kết hiệu quả" },
+      { label: "📞 Hotline liên hệ", value: "hotline liên hệ" }
+    ]);
+  }, 700);
+}
+
+// =============================================
+//  SELECT PRODUCT
+// =============================================
+function selectProduct(productId, autoScroll = true) {
+  const p = PRODUCTS.find(x => x.id === productId);
+  if (!p) return;
+  selectedProduct = p;
+  document.getElementById("qr-area")?.remove();
+
+  appendUserBubble(`Cho mình xem ${p.name}`);
+  state = STATE.SHOW_DETAIL;
+
+  botRespond(() => {
+    appendBotBubble(`
+      <div style="font-size:32px;text-align:center;margin-bottom:4px">${p.emoji}</div>
+      <b style="font-size:16px">${p.name}</b><br>
+      <span style="color:#e94560;font-size:18px;font-weight:700">${p.priceStr}</span><br><br>
+      📝 ${p.desc}<br><br>
+      💰 Chi phí: <b>${p.battery}</b><br>
+      💳 Thanh toán: <b>${p.waterproof}</b><br>
+      🤝 Cam kết: <b>${p.warranty}</b><br>
+      ${p.stars} · ${p.sold}
+    `);
+    setTimeout(() => {
+      appendQuickReplies([
+        { label: "🤝 Đăng ký tư vấn", value: "tư vấn" },
+        { label: "💰 Hỏi thêm chi phí", value: "chi phí" },
+        { label: "← Xem dịch vụ khác", value: "dịch vụ" }
+      ]);
+    }, 200);
+  }, 800);
+}
+
+// =============================================
+//  ORDERS
+// =============================================
+function saveOrder(order) {
+  const emptyState = document.getElementById("orders-empty");
+  if (emptyState) emptyState.style.display = "none";
+  
+  const list = document.getElementById("orders-list");
+  if (list) {
+    const card = document.createElement("div");
+    card.className = "order-card";
+    card.innerHTML = `
+      <b>🆕 Đơn #${orders.length}</b><br>
+      👤 ${escHtml(order.name)} – 📞 ${escHtml(order.phone)}<br>
+      📦 ${escHtml(order.product)} – ${escHtml(order.price)}<br>
+      📍 ${escHtml(order.address)}<br>
+      🕐 ${order.time}
+    `;
+    list.prepend(card);
+  }
+  
+  const badge = document.getElementById("order-badge");
+  if (badge) {
+    badge.textContent = orders.length;
+    badge.style.display = "inline-block";
+  }
+}
+
+// =============================================
+//  INPUT HANDLERS
+// =============================================
+function sendMessage() {
+  const input = document.getElementById("ms-input");
+  const text = input.value.trim();
+  if (!text || isTyping) return;
+  input.value = "";
+  document.getElementById("qr-area")?.remove();
+  appendUserBubble(text);
+  setTimeout(() => processMessage(text), 300);
+}
+
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function handleInput() {
+  // keep send btn always active
+}
+
+function sendSuggest(el) {
+  const text = el.textContent;
+  if (isTyping) return;
+  document.getElementById("qr-area")?.remove();
+  appendUserBubble(text);
+  setTimeout(() => processMessage(text), 300);
+}
+
+// =============================================
+//  API KEY & SETTINGS
+// =============================================
+function saveKey() {
+  const key = document.getElementById("grok-key").value.trim();
+  const status = document.getElementById("key-status");
+  if (!key) {
+    status.textContent = "⚠️ Vui lòng nhập API key";
+    status.style.color = "#ff8080";
+    return;
+  }
+  groqApiKey = key;
+  localStorage.setItem('groq_api_key', key);
+  status.textContent = "⏳ Đang lưu lên server...";
+  status.style.color = "#ffd700";
+
+  // Sync key to backend server so Messenger webhook can use it
+  if (activePageId) {
+    fetch(`${SERVER_URL}/api/update-settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pageId: activePageId, apiKey: key })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        status.textContent = "✅ Đã lưu! Key đã được đồng bộ lên server.";
+        status.style.color = "#6ee396";
+      } else {
+        status.textContent = "⚠️ Lưu local OK, nhưng server lỗi: " + data.error;
+        status.style.color = "#ff8080";
+      }
+    })
+    .catch(err => {
+      status.textContent = "✅ Đã lưu local! (Server offline - sẽ đồng bộ sau)";
+      status.style.color = "#ffd700";
+    });
+  } else {
+    status.textContent = "✅ Đã lưu! Bot sẽ dùng Groq AI cho câu hỏi ngoài kịch bản.";
+    status.style.color = "#6ee396";
+  }
+}
+
+// saveSettings() defined below with full activePageId support
+
+// =============================================
+//  LEFT PANEL TAB & SCRIPT ACTIONS
+// =============================================
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+  
+  document.getElementById(`tab-${tabName}`).classList.add('active');
+  document.getElementById(`content-${tabName}`).classList.add('active');
+  
+  if (tabName === 'users') {
+    loadPlatformUsers();
+  } else if (tabName === 'orders') {
+    loadOrdersForActivePage();
+  }
+}
+
+function loadSample() {
+  const sample = `Bạn là nhân viên tư vấn bán hàng của "Shop Điện Máy Hùng".
+Nhiệm vụ chính: Tư vấn sản phẩm, trả lời câu hỏi và hỗ trợ đặt hàng.
+
+=== THÔNG TIN SHOP ===
+- Tên: Shop Điện Máy Hùng
+- Địa chỉ: 123 Lê Lợi, Quận 1, TP.HCM
+- Hotline: 0909 123 456
+- Giờ hoạt động: 8:00 - 22:00 hàng ngày
+
+=== SẢN PHẨM ===
+1. Máy cao râu Philips S1000
+   - Giá: 450.000đ
+   - Pin Li-Ion dùng 60 phút
+   - Chống nước IPX4
+   - Bảo hành: 12 tháng
+
+2. Máy cao râu Braun Series 3
+   - Giá: 890.000đ
+   - Pin Li-Ion dùng 45 phút
+   - Chống nước IPX7
+   - Bảo hành: 24 tháng
+
+3. Máy cao râu Kemei KM-6330
+   - Giá: 220.000đ
+   - Pin Li-Ion dùng 50 phút
+   - Chống nước IPX5
+   - Bảo hành: 6 tháng
+
+=== CHÍNH SÁCH BÁN HÀNG ===
+- Miễn phí ship nội thành TP.HCM
+- Tỉnh khác: phí ship 25.000đ, giao 1-3 ngày
+- Đổi trả miễn phí trong 7 ngày nếu lỗi NSX
+
+=== QUY TRÌNH ĐẶT HÀNG ===
+Khi khách muốn đặt hàng, hỏi lần lượt:
+1. Tên đầy đủ
+2. Số điện thoại
+3. Địa chỉ giao hàng
+Sau đó xác nhận lại đơn hàng.`;
+  document.getElementById('script-input').value = sample;
+}
+
+function clearScript() {
+  document.getElementById('script-input').value = '';
+}
+
+// Sync script to backend for all connected pages
+async function syncScriptToServer(script) {
+  for (const page of connectedPages) {
+    try {
+      await fetch(`${SERVER_URL}/api/update-script`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageId: page.id, script: script })
+      });
+      console.log(`✅ Synced script to server for page: ${page.name}`);
+    } catch (err) {
+      console.warn(`⚠️ Could not sync script for page ${page.name}:`, err.message);
+    }
+  }
+}
+
+// =============================================
+//  CLEAR CHAT
+// =============================================
+function clearChat() {
+  const container = document.getElementById("ms-messages");
+  if (container) container.innerHTML = "";
+  state = STATE.IDLE;
+  selectedProduct = null;
+  orderData = {};
+  
+  addDateDivider("Hôm nay");
+  showTyping();
+  setTimeout(() => {
+    removeTyping();
+    appendBotBubble(`Xin chào! 👋 Mình là trợ lý tự động của <b>${SHOP_NAME}</b>.<br>Rất vui được hỗ trợ bạn! 😊`);
+    showTyping();
+    setTimeout(() => {
+      removeTyping();
+      appendBotBubble("Bạn đang quan tâm đến dịch vụ nào ạ?");
+      appendQuickReplies([
+        { label: "📈 Dịch vụ Ads Facebook", value: "chạy quảng cáo" },
+        { label: "💰 Báo giá chi phí", value: "chi phí" },
+        { label: "🤝 Cam kết hiệu quả", value: "cam kết hiệu quả" },
+        { label: "📞 Hotline liên hệ", value: "hotline liên hệ" }
+      ]);
+    }, 800);
+  }, 1000);
+}
+
+// =============================================
+//  REAL FACEBOOK SDK OAUTH LOGIN
+// =============================================
+
+let activePageId = localStorage.getItem('active_page_id') || '';
+let fbRealPages = []; // pages from /me/accounts API
+
+// Permissions needed to manage Messenger chatbot for pages
+const FB_PERMISSIONS = [
+  'pages_show_list',
+  'pages_messaging',
+  'pages_manage_metadata',
+  'pages_read_engagement',
+  'pages_manage_posts',
+  'pages_read_user_content',
+  'public_profile'
+].join(',');
+
+function startFbLogin() {
+  // Check if FB SDK loaded and App ID configured
+  if (typeof FB === 'undefined') {
+    showFbSdkError();
+    return;
+  }
+
+  const appId = localStorage.getItem('fb_app_id');
+  if (!appId) {
+    alert('⚠️ Hệ thống chưa được cấu hình. Vui lòng liên hệ admin!');
+    return;
+  }
+
+  // Re-init SDK with App ID from server
+  FB.init({
+    appId: appId,
+    cookie: true,
+    xfbml: false,
+    version: 'v19.0'
+  });
+
+  // Loading state on buttons
+  const btns = document.querySelectorAll('.btn-fb-login, .btn-hero-primary');
+  btns.forEach(b => {
+    b.disabled = true;
+    b.innerHTML = '<span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.4);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:8px"></span>Đang kết nối...';
+  });
+
+  // ✨ Trigger real FB OAuth popup
+  FB.login(function(response) {
+    // Reset buttons
+    btns.forEach(b => {
+      b.disabled = false;
+      b.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right:8px"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>Đăng nhập bằng Facebook';
+    });
+
+    if (response.status === 'connected') {
+      fbUserAccessToken = response.authResponse.accessToken;
+      fbUserId = response.authResponse.userID;
+      localStorage.setItem('fb_user_access_token', fbUserAccessToken);
+      localStorage.setItem('fb_user_id', fbUserId);
+      localStorage.removeItem('is_logged_in'); // Force page selection on next dashboard load
+
+      // Fetch user name then redirect to dashboard immediately
+      FB.api('/me', { fields: 'name' }, function(meData) {
+        fbUserName = meData.name || 'Người dùng';
+        localStorage.setItem('fb_user_name', fbUserName);
+        if (window.location.protocol === 'file:') {
+          window.location.href = 'dashboard.html';
+        } else {
+          window.location.href = '/dashboard';
+        }
+      });
+    } else {
+      console.log('FB Login cancelled:', response);
+    }
+  }, {
+    scope: FB_PERMISSIONS,
+    return_scopes: true
+  });
+}
+
+// Fetch all Fanpages qua SERVER để đổi lấy Page Token VĨNH VIỄN
+// Không còn dùng FB SDK trực tiếp → tránh hoàn toàn lỗi "Session has expired"
+async function fetchUserPages(userToken) {
+  const modal = document.getElementById('page-select-modal');
+  const userDisplay = document.getElementById('fb-user-name-display');
+  const pageList = document.getElementById('fb-real-page-list');
+
+  fbUserName = fbUserName || localStorage.getItem('fb_user_name');
+  if (userDisplay) userDisplay.textContent = (fbUserName || 'Người dùng') + ' ▾';
+  if (modal) modal.classList.remove('hidden');
+
+  if (pageList) {
+    pageList.innerHTML = `
+      <div style="text-align:center;padding:30px;color:#65676b;">
+        <div style="display:inline-block;width:28px;height:28px;border:3px solid #e4e6eb;border-top-color:#1877f2;border-radius:50%;animation:fbSpinner 0.7s linear infinite;margin-bottom:12px;"></div>
+        <div style="font-size:13px;">Đang lấy token vĩnh viễn từ server...</div>
+      </div>`;
+  }
+
+  try {
+    // Gọi server đổi token: short-lived → Long-lived (60 ngày) → Page Token VĨNH VIỄN
+    const resp = await fetch(`${SERVER_URL}/api/exchange-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userAccessToken: userToken })
+    });
+    const data = await resp.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Không thể đổi token');
+    }
+
+    // Lưu lại long-lived user token (60 ngày) vào localStorage
+    if (data.longLivedToken) {
+      localStorage.setItem('fb_user_access_token', data.longLivedToken);
+      fbUserAccessToken = data.longLivedToken;
+    }
+
+    fbRealPages = data.pages || [];
+
+    if (fbRealPages.length === 0) {
+      if (pageList) {
+        pageList.innerHTML = `
+          <div style="text-align:center;padding:30px;color:#65676b;">
+            <div style="font-size:32px;margin-bottom:8px;">😕</div>
+            <div>Không tìm thấy Fanpage nào.</div>
+            <small>Bạn cần là Admin của ít nhất 1 Fanpage.</small>
+          </div>`;
+      }
+      return;
+    }
+
+    renderPageSelectList(fbRealPages);
+
+  } catch (err) {
+    console.error('Lỗi fetchUserPages:', err.message);
+    const isExpired = /expired|session|invalid|hết hạn/i.test(err.message);
+    if (pageList) {
+      pageList.innerHTML = `
+        <div style="text-align:center;padding:24px;">
+          <div style="font-size:36px;margin-bottom:10px;">${isExpired ? '⏰' : '❌'}</div>
+          <div style="font-size:14px;font-weight:700;color:#e94560;margin-bottom:6px;">
+            ${isExpired ? 'Phiên đăng nhập đã hết hạn' : 'Lỗi kết nối'}
+          </div>
+          <div style="font-size:12px;color:#65676b;margin-bottom:16px;line-height:1.5;">
+            ${isExpired
+              ? 'Token Facebook của bạn đã hết hạn.<br>Vui lòng đăng nhập lại để lấy token mới (60 ngày).'
+              : escHtml(err.message)
+            }
+          </div>
+          <button onclick="startFbLogin()" style="background:#1877f2;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:13px;font-weight:700;cursor:pointer;">
+            🔑 Đăng nhập lại Facebook
+          </button>
+        </div>`;
+    }
+  }
+}
+
+function renderPageSelectList(pages) {
+  const pageList = document.getElementById('fb-real-page-list');
+  if (!pageList) return;
+
+  const colors = ['#ef4444', '#1877f2', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4'];
+
+  pageList.innerHTML = pages.map((page, i) => {
+    const initials = page.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+    const color = colors[i % colors.length];
+    const avatarHtml = page.picture?.data?.url
+      ? `<img src="${page.picture.data.url}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;" />`
+      : `<div class="page-item-avatar" style="background:${color}">${initials}</div>`;
+
+    return `
+      <label class="fb-page-item">
+        <div class="page-item-left">
+          ${avatarHtml}
+          <div class="page-item-info">
+            <span class="page-item-name">${escHtml(page.name)}</span>
+            <span class="page-item-id">${page.category || 'Trang'} · ID: ${page.id}</span>
+          </div>
+        </div>
+        <input type="checkbox" name="fb_real_pages" value="${page.id}" data-name="${escHtml(page.name)}" data-token="${page.access_token}" checked />
+      </label>
+    `;
+  }).join('');
+}
+
+function showFbSdkError() {
+  alert('⚠️ Hệ thống chưa sẵn sàng. Vui lòng đợi vài giây rồi thử lại!');
+}
+
+function showPageSelectModal() {
+  // This is called only after OAuth — fbRealPages should already be populated
+  // If not (edge case), show the modal with whatever is available
+  const modal = document.getElementById('page-select-modal');
+  const userDisplay = document.getElementById('fb-user-name-display');
+  if (userDisplay) userDisplay.textContent = (fbUserName || 'Người dùng') + ' ▾';
+  if (modal) modal.classList.remove('hidden');
+  if (fbRealPages.length > 0) renderPageSelectList(fbRealPages);
+}
+
+
+async function connectSelectedPages() {
+  const checkboxes = document.querySelectorAll('input[name="fb_real_pages"]:checked');
+  if (checkboxes.length === 0) {
+    document.getElementById('connect-status').innerHTML = '<span style="color:#ff8080">⚠️ Vui lòng chọn ít nhất 1 Fanpage</span>';
+    return;
+  }
+
+  const statusEl = document.getElementById('connect-status');
+  statusEl.innerHTML = '<span style="color:#1877f2">⏳ Đang kết nối...</span>';
+  
+  const btn = document.getElementById('btn-connect-pages');
+  btn.disabled = true;
+  btn.textContent = 'Đang xử lý...';
+
+  connectedPages = [];
+  let successCount = 0;
+  const script = localStorage.getItem('chatbot_script') || '';
+
+  for (const cb of checkboxes) {
+    const pageId = cb.value;
+    const pageName = cb.dataset.name;
+    const pageToken = cb.dataset.token;
+
+    try {
+      const resp = await fetch(`${SERVER_URL}/api/connect-page`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pageId: pageId,
+          pageName: pageName,
+          pageToken: pageToken,
+          script: script
+        })
+      });
+
+      const result = await resp.json();
+      if (result.success) {
+        connectedPages.push({ id: pageId, name: pageName, token: pageToken });
+        successCount++;
+      }
+    } catch (err) {
+      console.warn(`Không thể kết nối ${pageName} lên server: ${err.message}. Đang lưu cục bộ.`);
+      // Fallback offline so they can still test
+      connectedPages.push({ id: pageId, name: pageName, token: pageToken });
+      successCount++;
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Kết nối Fanpage';
+
+  if (successCount > 0) {
+    localStorage.setItem('connected_pages', JSON.stringify(connectedPages));
+    localStorage.setItem('is_logged_in', 'true');
+    
+    // Choose active page
+    activePageId = connectedPages[0].id;
+    localStorage.setItem('active_page_id', activePageId);
+    
+    SHOP_NAME = connectedPages[0].name;
+    localStorage.setItem('shop_name', SHOP_NAME);
+
+    // ✨ Register platform user on the server so they appear in "Người dùng" tab
+    const currentFbUserId = fbUserId || localStorage.getItem('fb_user_id');
+    const currentFbUserName = fbUserName || localStorage.getItem('fb_user_name');
+    if (currentFbUserId && currentFbUserName) {
+      try {
+        await fetch(`${SERVER_URL}/api/platform-users/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fbUserId: currentFbUserId,
+            name: currentFbUserName,
+            pages: connectedPages
+          })
+        });
+        console.log("✅ Registered platform user successfully!");
+      } catch (err) {
+        console.error("⚠️ Failed to register platform user:", err.message);
+      }
+    }
+
+    statusEl.innerHTML = `<span style="color:#28a745">✅ Đã kết nối thành công ${successCount} Fanpage!</span>`;
+    
+    setTimeout(() => {
+      document.getElementById('page-select-modal').classList.add('hidden');
+      enterDashboard();
+    }, 1200);
+  }
+}
+
+function cancelPageSelect() {
+  document.getElementById('page-select-modal').classList.add('hidden');
+  const landing = document.getElementById("landing-page");
+  if (landing) landing.classList.remove("hidden");
+}
+
+// Populate page select dropdown in dashboard
+function updatePageSelectDropdown() {
+  const select = document.getElementById('active-page-select');
+  if (!select) return;
+  
+  if (connectedPages.length === 0) {
+    select.innerHTML = '<option value="">(Không có trang nào)</option>';
+    return;
+  }
+  
+  select.innerHTML = connectedPages.map(p => `
+    <option value="${p.id}" ${p.id === activePageId ? 'selected' : ''}>📄 ${escHtml(p.name)}</option>
+  `).join('');
+}
+
+// Switch active configuration tenant page
+async function changeActivePage(pageId) {
+  if (!pageId) return;
+  activePageId = pageId;
+  localStorage.setItem('active_page_id', pageId);
+  
+  // Set shop name and avatar
+  const page = connectedPages.find(p => p.id === pageId);
+  if (page) {
+    SHOP_NAME = page.name;
+    localStorage.setItem('shop_name', SHOP_NAME);
+    
+    document.getElementById('ms-shop-name').textContent = SHOP_NAME;
+    document.getElementById('shop-name-input').value = SHOP_NAME;
+    document.getElementById('shop-avatar-initial').textContent = SHOP_NAME.charAt(0).toUpperCase();
+    BOT_AVATAR = `https://ui-avatars.com/api/?name=${encodeURIComponent(SHOP_NAME)}&background=1877f2&color=fff&size=28`;
+  }
+
+  // Load configuration from backend if available
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/connected-pages`);
+    const pages = await resp.json();
+    const serverPage = pages.find(p => p.id === pageId);
+    
+    if (serverPage) {
+      if (serverPage.script) {
+        document.getElementById('script-input').value = serverPage.script;
+        localStorage.setItem('chatbot_script', serverPage.script);
+        document.getElementById('script-status-bar').style.display = 'none';
+      } else {
+        document.getElementById('script-input').value = '';
+        document.getElementById('script-status-bar').style.display = 'block';
+      }
+      
+      document.getElementById('model-select').value = serverPage.model || 'llama-3.3-70b-versatile';
+      document.getElementById('temperature').value = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
+      document.getElementById('temp-val').textContent = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
+      document.getElementById('grok-key').value = serverPage.apiKey || '';
+      groqApiKey = serverPage.apiKey || '';
+      localStorage.setItem('groq_api_key', groqApiKey);
+    }
+  } catch (e) {
+    console.warn("Lỗi tải thông tin trang từ backend:", e.message);
+  }
+
+  // Reset chat interface
+  const msgs = document.getElementById('ms-messages');
+  if (msgs) msgs.innerHTML = '';
+  
+  addDateDivider("Hôm nay");
+  showTyping();
+  setTimeout(() => {
+    removeTyping();
+    const currentScript = document.getElementById('script-input').value;
+    if (currentScript) {
+      appendBotBubble(`Xin chào! 👋 Mình là trợ lý tự động của <b>${SHOP_NAME}</b>.<br>Em đã được học kịch bản mới của anh/chị và sẵn sàng tư vấn. Anh/Chị hãy chat thử nhé! 😊`);
+    } else {
+      appendBotBubble(`Xin chào! 👋 Mình là trợ lý tự động của <b>${SHOP_NAME}</b>.<br>Rất vui được hỗ trợ bạn! 😊`);
+    }
+  }, 1000);
+  
+  // Refresh order badge
+  loadOrdersForActivePage();
+}
+
+async function loadOrdersForActivePage() {
+  try {
+    const resp = await fetch(`${SERVER_URL}/orders?pageId=${activePageId}`);
+    const ordersData = await resp.json();
+    
+    const list = document.getElementById("orders-list");
+    const emptyState = document.getElementById("orders-empty");
+    const badge = document.getElementById("order-badge");
+    
+    if (list) list.innerHTML = '';
+    
+    if (ordersData && ordersData.length > 0) {
+      if (emptyState) emptyState.style.display = "none";
+      orders = ordersData;
+      
+      if (list) {
+        ordersData.forEach((order, index) => {
+          const card = document.createElement("div");
+          card.className = "order-card";
+          card.innerHTML = `
+            <b>🆕 Đơn #${index + 1}</b><br>
+            👤 ${escHtml(order.name || order.senderId)} – 📞 ${escHtml(order.phone || '')}<br>
+            📦 ${escHtml(order.product || '')} – ${escHtml(order.price || '')}<br>
+            📍 ${escHtml(order.address || '')}<br>
+            🕐 ${order.time}
+          `;
+          list.appendChild(card);
+        });
+      }
+      
+      if (badge) {
+        badge.textContent = ordersData.length;
+        badge.style.display = "inline-block";
+      }
+    } else {
+      if (emptyState) emptyState.style.display = "block";
+      if (badge) badge.style.display = "none";
+    }
+  } catch (e) {
+    console.warn("Lỗi đồng bộ danh sách đơn hàng:", e.message);
+  }
+}
+
+// =============================================
+//  PLATFORM USER MANAGEMENT
+// =============================================
+async function loadPlatformUsers() {
+  const container = document.getElementById('platform-users-list');
+  if (!container) return;
+  container.innerHTML = `<div style="text-align:center;padding:20px;color:#64748b">⏳ Đang tải...</div>`;
+
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/platform-users`, {
+      headers: { 'Authorization': 'Basic ' + btoa('admin:Namc6352@@@@@') }
+    });
+    if (!resp.ok) { container.innerHTML = `<div style="color:#ef4444;padding:20px;text-align:center">❌ Không thể tải (cần đăng nhập admin)</div>`; return; }
+    const users = await resp.json();
+
+    // Update stats
+    const total = users.length;
+    const active = users.filter(u => u.status === 'active').length;
+    const expired = users.filter(u => u.status === 'expired' || u.status === 'blocked').length;
+    const el = (id, v) => { const e = document.getElementById(id); if(e) e.textContent = v; };
+    el('pu-stat-total', total); el('pu-stat-active', active); el('pu-stat-expired', expired);
+
+    // Update badge
+    const badge = document.getElementById('user-badge');
+    if (badge) { badge.textContent = total; badge.style.display = total > 0 ? 'inline-block' : 'none'; }
+
+    if (users.length === 0) {
+      container.innerHTML = `<div style="text-align:center;padding:30px;color:#64748b"><div style="font-size:28px">👥</div><p style="font-size:12px">Chưa có người dùng nào.<br>Khi khách đăng nhập Facebook sẽ hiện ở đây.</p></div>`;
+      return;
+    }
+
+    container.innerHTML = users.map(u => {
+      const statusColor = u.status === 'active' ? '#10b981' : u.status === 'blocked' ? '#ef4444' : '#f59e0b';
+      const statusLabel = u.status === 'active' ? '✅ Active' : u.status === 'blocked' ? '🔒 Bị khóa' : '⏰ Hết hạn';
+      const planLabel = { trial: '🆓 Trial', basic: '🥈 Basic', pro: '🥇 Pro', enterprise: '💎 Enterprise' }[u.plan] || u.plan;
+      const regDate = new Date(u.registeredAt).toLocaleDateString('vi-VN');
+      const lastLogin = new Date(u.lastLoginAt).toLocaleDateString('vi-VN');
+      const expiry = new Date(u.expiryDate);
+      const expiryStr = expiry.toLocaleDateString('vi-VN');
+      const daysLeft = Math.ceil((expiry - Date.now()) / 86400000);
+      const daysColor = daysLeft <= 3 ? '#ef4444' : daysLeft <= 7 ? '#f59e0b' : '#10b981';
+      const daysText = daysLeft > 0 ? `còn ${daysLeft} ngày` : `hết ${Math.abs(daysLeft)} ngày trước`;
+      const initials = (u.name || '?').split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+      const avatarColors = ['#1877f2','#10b981','#8b5cf6','#f59e0b','#ec4899','#06b6d4','#ef4444'];
+      const avatarColor = avatarColors[Math.abs(u.id.split('').reduce((a,c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
+
+      return `
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:38px;height:38px;border-radius:50%;background:${avatarColor};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">${initials}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(u.name)}</div>
+              <div style="font-size:10px;color:#64748b">ID: ${u.id} · ${u.pageCount || 0} fanpage</div>
+            </div>
+            <span style="background:${statusColor}22;color:${statusColor};border:1px solid ${statusColor}44;border-radius:20px;padding:2px 8px;font-size:10px;font-weight:600;white-space:nowrap">${statusLabel}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#94a3b8">
+            <div>📅 Đăng ký: <b style="color:#f1f5f9">${regDate}</b></div>
+            <div>🕐 Đăng nhập: <b style="color:#f1f5f9">${lastLogin}</b></div>
+            <div>📦 Gói: <b style="color:#f1f5f9">${planLabel}</b></div>
+            <div>⏳ Hạn: <b style="color:${daysColor}">${expiryStr} (${daysText})</b></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button onclick="openEditUserModal('${u.id}','${escHtml(u.name)}','${u.expiryDate}','${u.plan}')" style="flex:1;min-width:60px;background:#1877f222;border:1px solid #1877f244;color:#1877f2;border-radius:6px;padding:5px;font-size:11px;cursor:pointer;font-weight:600">✏️ Gia hạn</button>
+            <button onclick="toggleBlockUser('${u.id}','${u.status}')" style="flex:1;min-width:60px;background:${u.status==='blocked'?'#10b98122':'#ef444422'};border:1px solid ${u.status==='blocked'?'#10b98144':'#ef444444'};color:${u.status==='blocked'?'#10b981':'#ef4444'};border-radius:6px;padding:5px;font-size:11px;cursor:pointer;font-weight:600">${u.status==='blocked'?'🔓 Mở khóa':'🔒 Khóa'}</button>
+            <button onclick="deletePlatformUser('${u.id}','${escHtml(u.name)}')" style="background:#334155;border:1px solid #475569;color:#94a3b8;border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer">🗑</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    container.innerHTML = `<div style="color:#ef4444;padding:20px;text-align:center">❌ Lỗi: ${e.message}</div>`;
+  }
+}
+
+function openEditUserModal(id, name, expiryDate, plan) {
+  document.getElementById('edit-user-id').value = id;
+  document.getElementById('edit-user-name').textContent = name;
+  document.getElementById('edit-expiry-date').value = expiryDate ? expiryDate.substring(0, 10) : '';
+  document.getElementById('edit-plan').value = plan || 'trial';
+  document.getElementById('edit-user-status').textContent = '';
+  document.getElementById('edit-user-modal').style.display = 'flex';
+}
+
+function closeEditUserModal() {
+  document.getElementById('edit-user-modal').style.display = 'none';
+}
+
+async function saveEditUser() {
+  const id = document.getElementById('edit-user-id').value;
+  const expiryDate = document.getElementById('edit-expiry-date').value;
+  const plan = document.getElementById('edit-plan').value;
+  const statusEl = document.getElementById('edit-user-status');
+  statusEl.innerHTML = '<span style="color:#1877f2">⏳ Đang lưu...</span>';
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/platform-users/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic ' + btoa('admin:Namc6352@@@@@') },
+      body: JSON.stringify({ expiryDate, plan, status: 'active' })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      statusEl.innerHTML = '<span style="color:#10b981">✅ Đã lưu thành công!</span>';
+      setTimeout(() => { closeEditUserModal(); loadPlatformUsers(); }, 1000);
+    } else {
+      statusEl.innerHTML = `<span style="color:#ef4444">❌ Lỗi: ${data.error}</span>`;
+    }
+  } catch(e) { statusEl.innerHTML = `<span style="color:#ef4444">❌ ${e.message}</span>`; }
+}
+
+async function toggleBlockUser(id, currentStatus) {
+  const newStatus = currentStatus === 'blocked' ? 'active' : 'blocked';
+  const label = newStatus === 'blocked' ? 'Khóa' : 'Mở khóa';
+  if (!confirm(`Bạn có chắc muốn ${label} tài khoản này?`)) return;
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/platform-users/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic ' + btoa('admin:Namc6352@@@@@') },
+      body: JSON.stringify({ status: newStatus })
+    });
+    const data = await resp.json();
+    if (data.success) loadPlatformUsers();
+  } catch(e) { alert('Lỗi: ' + e.message); }
+}
+
+async function deletePlatformUser(id, name) {
+  if (!confirm(`⚠️ Xóa vĩnh viễn tài khoản "${name}"?\nHành động này không thể hoàn tác!`)) return;
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/platform-users/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Basic ' + btoa('admin:Namc6352@@@@@') }
+    });
+    const data = await resp.json();
+    if (data.success) loadPlatformUsers();
+  } catch(e) { alert('Lỗi: ' + e.message); }
+}
+
+
+
+// =============================================
+//  DASHBOARD NAVIGATION
+// =============================================
+async function enterDashboard() {
+  const landing = document.getElementById("landing-page");
+  const dashboard = document.getElementById("dashboard-page");
+
+  // ✨ Check if user is blocked or expired on the platform on entry
+  const currentFbUserId = fbUserId || localStorage.getItem('fb_user_id');
+  if (currentFbUserId) {
+    try {
+      const checkResp = await fetch(`${SERVER_URL}/api/platform-users/check/${currentFbUserId}`);
+      const checkData = await checkResp.json();
+      if (checkData && checkData.allowed === false) {
+        let msg = "Tài khoản của bạn đã bị khóa hoặc hết hạn dùng thử.";
+        if (checkData.status === 'blocked') {
+          msg = "❌ Tài khoản của bạn đã bị KHÓA bởi Admin.";
+        } else if (checkData.status === 'expired') {
+          msg = "⏰ Tài khoản của bạn đã HẾT HẠN sử dụng. Vui lòng liên hệ Admin để gia hạn!";
+        }
+        alert(msg);
+        handleLogout();
+        return;
+      }
+    } catch (e) {
+      console.warn("Không thể kiểm tra trạng thái tài khoản với server:", e.message);
+    }
+  }
+  
+  if (landing) landing.classList.add("hidden");
+  if (dashboard) dashboard.classList.remove("hidden");
+
+  // Load ALL connected pages from server and merge with localStorage
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/connected-pages`);
+    const serverPages = await resp.json();
+    if (serverPages && serverPages.length > 0) {
+      // Merge: keep server pages as source of truth, add any local-only pages
+      const serverIds = new Set(serverPages.map(p => p.id));
+      const localOnly = connectedPages.filter(p => !serverIds.has(p.id));
+      connectedPages = [
+        ...serverPages.map(p => ({ id: p.id, name: p.name, token: p.token || '' })),
+        ...localOnly
+      ];
+      localStorage.setItem('connected_pages', JSON.stringify(connectedPages));
+      // Keep activePageId valid
+      if (!connectedPages.find(p => p.id === activePageId)) {
+        activePageId = connectedPages[0].id;
+        localStorage.setItem('active_page_id', activePageId);
+      }
+    }
+  } catch (e) {
+    console.warn('Không thể tải danh sách fanpage từ server:', e.message);
+  }
+  
+  // Show active configuration dropdown
+  const pagesBar = document.getElementById('connected-pages-bar');
+  if (pagesBar) pagesBar.style.display = 'block';
+  
+  // Refresh page selector
+  updatePageSelectDropdown();
+  
+  if (activePageId) {
+    await changeActivePage(activePageId);
+  } else if (connectedPages.length > 0) {
+    await changeActivePage(connectedPages[0].id);
+  }
+}
+
+function handleLogout() {
+  // Clear auth states
+  localStorage.removeItem("is_logged_in");
+  localStorage.removeItem("connected_pages");
+  localStorage.removeItem("fb_user_name");
+  localStorage.removeItem("active_page_id");
+  localStorage.removeItem("fb_user_access_token");
+  localStorage.removeItem("fb_user_id");
+  
+  fbUserName = null;
+  connectedPages = [];
+  activePageId = '';
+  
+  const landing = document.getElementById("landing-page");
+  const dashboard = document.getElementById("dashboard-page");
+  const fbLoginWrap = document.getElementById("fb-login-wrapper");
+  const pagesBar = document.getElementById('connected-pages-bar');
+  
+  if (pagesBar) pagesBar.style.display = 'none';
+  if (fbLoginWrap) fbLoginWrap.classList.add("hidden");
+  if (landing) landing.classList.remove("hidden");
+  if (dashboard) dashboard.classList.add("hidden");
+
+  // Redirect to landing
+  if (window.location.protocol === 'file:') {
+    window.location.href = 'index.html';
+  } else {
+    window.location.href = '/';
+  }
+}
+
+// ✨ Prompt Facebook OAuth again using 'rerequest' so user can select missing Fanpages
+function reauthorizeFacebook() {
+  if (typeof FB === 'undefined') {
+    showFbSdkError();
+    return;
+  }
+  const appId = localStorage.getItem('fb_app_id');
+  if (!appId) {
+    alert('⚠️ Hệ thống chưa được cấu hình. Vui lòng liên hệ admin!');
+    return;
+  }
+  
+  FB.init({
+    appId: appId,
+    cookie: true,
+    xfbml: false,
+    version: 'v19.0'
+  });
+
+  const modal = document.getElementById('page-select-modal');
+  const pageList = document.getElementById('fb-real-page-list');
+  const statusEl = document.getElementById('connect-status');
+  if (statusEl) statusEl.innerHTML = '<span style="color:#1877f2">⏳ Đang gọi popup Facebook...</span>';
+
+  FB.login(function(response) {
+    if (response.status === 'connected') {
+      fbUserAccessToken = response.authResponse.accessToken;
+      fbUserId = response.authResponse.userID;
+      localStorage.setItem('fb_user_access_token', fbUserAccessToken);
+      localStorage.setItem('fb_user_id', fbUserId);
+      if (statusEl) statusEl.innerHTML = '<span style="color:#10b981">✅ Kết nối FB thành công! Đang tải danh sách Trang...</span>';
+      
+      FB.api('/me', { fields: 'name' }, function(meData) {
+        fbUserName = meData.name || 'Người dùng';
+        localStorage.setItem('fb_user_name', fbUserName);
+        fetchUserPages(fbUserAccessToken);
+      });
+    } else {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#ff8080">⚠️ Bạn đã hủy đăng nhập Facebook</span>';
+    }
+  }, {
+    scope: FB_PERMISSIONS,
+    return_scopes: true,
+    auth_type: 'rerequest' // Forces Facebook to prompt page selections again
+  });
+}
+
+function applyScript() {
+  const scriptVal = document.getElementById('script-input').value.trim();
+  const status = document.getElementById('apply-status');
+  const statusBar = document.getElementById('script-status-bar');
+  
+  if (!scriptVal) {
+    status.innerHTML = `<span style="color:#ff8080">⚠️ Vui lòng nhập kịch bản trước khi áp dụng!</span>`;
+    return;
+  }
+  
+  localStorage.setItem('chatbot_script', scriptVal);
+  
+  if (activePageId) {
+    fetch(`${SERVER_URL}/api/update-script`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pageId: activePageId, script: scriptVal })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        status.innerHTML = `<span style="color:#6ee396">✅ Đã cập nhật kịch bản lên máy chủ!</span>`;
+        if (statusBar) statusBar.style.display = 'none';
+      } else {
+        status.innerHTML = `<span style="color:#ff8080">⚠️ Lỗi: ${data.error}</span>`;
+      }
+    })
+    .catch(err => {
+      status.innerHTML = `<span style="color:#6ee396">✅ Đã lưu kịch bản cục bộ offline!</span>`;
+      if (statusBar) statusBar.style.display = 'none';
+    });
+  } else {
+    status.innerHTML = `<span style="color:#ff8080">⚠️ Không tìm thấy Fanpage để cấu hình.</span>`;
+  }
+  
+  setTimeout(() => {
+    status.innerHTML = '';
+  }, 3000);
+}
+
+function saveSettings() {
+  const shopNameVal = document.getElementById('shop-name-input').value.trim();
+  const serverUrlVal = document.getElementById('server-url-input').value.trim();
+  const modelVal = document.getElementById('model-select').value;
+  const tempVal = document.getElementById('temperature').value;
+  const apiKeyVal = document.getElementById('grok-key').value.trim();
+  const status = document.getElementById('settings-status');
+  
+  if (serverUrlVal) {
+    SERVER_URL = serverUrlVal.replace(/\/+$/, ''); // remove trailing slashes
+    localStorage.setItem('server_url', SERVER_URL);
+  }
+
+  // Update active page configuration on server
+  if (activePageId) {
+    fetch(`${SERVER_URL}/api/update-settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pageId: activePageId,
+        shopName: shopNameVal,
+        model: modelVal,
+        temperature: parseFloat(tempVal),
+        apiKey: apiKeyVal
+      })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        // Update local connectedPages array
+        const pIndex = connectedPages.findIndex(p => p.id === activePageId);
+        if (pIndex !== -1) {
+          connectedPages[pIndex].name = shopNameVal;
+          localStorage.setItem('connected_pages', JSON.stringify(connectedPages));
+          updatePageSelectDropdown();
+        }
+        
+        SHOP_NAME = shopNameVal;
+        document.getElementById('ms-shop-name').textContent = shopNameVal;
+        document.getElementById('shop-avatar-initial').textContent = shopNameVal.charAt(0).toUpperCase();
+        BOT_AVATAR = `https://ui-avatars.com/api/?name=${encodeURIComponent(shopNameVal)}&background=1877f2&color=fff&size=28`;
+        
+        groqApiKey = apiKeyVal;
+        localStorage.setItem('groq_api_key', apiKeyVal);
+        status.innerHTML = `<span style="color:#6ee396">✅ Đã cập nhật cấu hình cho trang thành công!</span>`;
+      } else {
+        status.innerHTML = `<span style="color:#ff8080">⚠️ Lỗi: ${data.error}</span>`;
+      }
+    })
+    .catch(err => {
+      // Fallback local update
+      const pIndex = connectedPages.findIndex(p => p.id === activePageId);
+      if (pIndex !== -1) {
+        connectedPages[pIndex].name = shopNameVal;
+        localStorage.setItem('connected_pages', JSON.stringify(connectedPages));
+        updatePageSelectDropdown();
+      }
+      status.innerHTML = `<span style="color:#6ee396">✅ Đã lưu cài đặt cục bộ offline!</span>`;
+    });
+  } else {
+    status.innerHTML = `<span style="color:#ff8080">⚠️ Không tìm thấy Fanpage để cấu hình.</span>`;
+  }
+  
+}
+
+async function resetAllSystemData() {
+  if (!confirm("⚠️ CẢNH BÁO: Hành động này sẽ xóa sạch toàn bộ Fanpage đã kết nối, lịch sử đơn hàng và reset hệ thống về mặc định. Bạn có chắc chắn muốn tiếp tục?")) {
+    return;
+  }
+  
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/reset-all`, { method: 'POST' });
+    const result = await resp.json();
+    if (result.success) {
+      alert("✅ Đã reset toàn bộ hệ thống thành công!");
+      localStorage.clear();
+      if (window.location.protocol === 'file:') {
+        window.location.href = 'index.html';
+      } else {
+        window.location.href = '/';
+      }
+    } else {
+      alert("⚠️ Lỗi: " + result.error);
+    }
+  } catch (err) {
+    alert("✅ Đã reset ngoại tuyến. Đang dọn dẹp trình duyệt...");
+    localStorage.clear();
+    if (window.location.protocol === 'file:') {
+      window.location.href = 'index.html';
+    } else {
+      window.location.href = '/';
+    }
+  }
+}
+
+// =============================================
+//  INIT – Welcome messages & LocalStorage
+// =============================================
+window.addEventListener("DOMContentLoaded", async () => {
+  // Load server config
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/config`);
+    const config = await resp.json();
+    if (config) {
+      if (config.fbAppId) {
+        localStorage.setItem('fb_app_id', config.fbAppId);
+      } else {
+        localStorage.removeItem('fb_app_id');
+      }
+    }
+  } catch (e) {}
+
+  // Load API Key
+  groqApiKey = localStorage.getItem('groq_api_key') || '';
+  const keyInput = document.getElementById('grok-key');
+  if (keyInput) keyInput.value = groqApiKey;
+
+  // Load server URL
+  const savedServerUrl = localStorage.getItem('server_url') || ((window.location.protocol !== 'file:') ? window.location.origin : 'http://localhost:3000');
+  SERVER_URL = savedServerUrl;
+  const serverInput = document.getElementById('server-url-input');
+  if (serverInput) serverInput.value = savedServerUrl;
+
+  // Temp slider value listener
+  const tempSlider = document.getElementById('temperature');
+  if (tempSlider) {
+    tempSlider.addEventListener('input', (e) => {
+      document.getElementById('temp-val').textContent = e.target.value;
+    });
+  }
+
+  // Load connected pages from localStorage
+  try {
+    const savedPages = JSON.parse(localStorage.getItem('connected_pages') || '[]');
+    if (savedPages.length > 0) {
+      connectedPages = savedPages;
+      activePageId = localStorage.getItem('active_page_id') || connectedPages[0].id;
+    }
+  } catch(e) {}
+
+  const isDashboardRoute = window.location.pathname.endsWith('/dashboard') || window.location.pathname.endsWith('/dashboard.html');
+  const isLoggedIn = localStorage.getItem('is_logged_in') === 'true' && connectedPages.length > 0;
+  const fbUserToken = localStorage.getItem('fb_user_access_token');
+  fbUserName = localStorage.getItem('fb_user_name');
+
+  if (isDashboardRoute) {
+    if (isLoggedIn) {
+      // ✅ Đã đăng nhập → vào dashboard ngay, KHÔNG cần FB SDK hay token
+      // Server đã lưu Page Token vĩnh viễn trong pages.json
+      enterDashboard();
+    } else if (fbUserToken) {
+      // Có token nhưng chưa chọn page → gọi server đổi token vĩnh viễn
+      // fetchUserPages giờ gọi server-side, không cần FB SDK
+      console.log('⏳ Đang đổi token qua server...');
+      fetchUserPages(fbUserToken);
+    } else {
+      // Không có token → về trang chủ
+      if (window.location.protocol === 'file:') {
+        window.location.href = 'index.html';
+      } else {
+        window.location.href = '/';
+      }
+    }
+  } else {
+    // Landing page route
+    if (isLoggedIn) {
+      if (window.location.protocol === 'file:') {
+        window.location.href = 'dashboard.html';
+      } else {
+        window.location.href = '/dashboard';
+      }
+    } else {
+      const landing = document.getElementById('landing-page');
+      if (landing) landing.classList.remove('hidden');
+      
+      const dashboard = document.getElementById('dashboard-page');
+      if (dashboard) dashboard.classList.add('hidden');
+      
+      // Welcome flow on Landing Page mockup chat
+      const msgs = document.getElementById('ms-messages');
+      if (msgs && !isDashboardRoute) {
+        msgs.innerHTML = '';
+        addDateDivider("Hôm nay");
+        await new Promise(r => setTimeout(r, 400));
+        showTyping();
+        await new Promise(r => setTimeout(r, 1000));
+        removeTyping();
+        appendBotBubble(`Xin chào! 👋 Mình là trợ lý tự động của <b>${SHOP_NAME}</b>.<br>Rất vui được hỗ trợ bạn! 😊`);
+        await new Promise(r => setTimeout(r, 600));
+        showTyping();
+        await new Promise(r => setTimeout(r, 800));
+        removeTyping();
+        appendBotBubble("Bạn đang quan tâm đến dịch vụ nào ạ?");
+        appendQuickReplies([
+          { label: "📈 Dịch vụ Ads Facebook", value: "chạy quảng cáo" },
+          { label: "💰 Báo giá chi phí", value: "chi phí" },
+          { label: "🤝 Cam kết hiệu quả", value: "cam kết hiệu quả" },
+          { label: "📞 Hotline liên hệ", value: "hotline liên hệ" }
+        ]);
+      }
+    }
+  }
+});
+
+// =============================================
+//  FACEBOOK SDK INITIALIZATION & EVENTS (CENTRALIZED)
+// =============================================
+window.fbAsyncInit = function() {
+  const appId = localStorage.getItem('fb_app_id') || '';
+  if (!appId) {
+    console.warn('⚠️ Chưa có Facebook App ID.');
+    return;
+  }
+  FB.init({
+    appId: appId,
+    cookie: true,
+    xfbml: false,
+    version: 'v19.0'
+  });
+  console.log('✅ Facebook SDK centralized initialization successful!');
+
+  // Check if already logged in (on Landing Page)
+  const isDashboardRoute = window.location.pathname.endsWith('/dashboard') || window.location.pathname.endsWith('/dashboard.html');
+  if (!isDashboardRoute) {
+    FB.getLoginStatus(function(response) {
+      if (response.status === 'connected') {
+        console.log('✅ Already connected to Facebook on Landing Page');
+      }
+    });
+  } else {
+    // Nếu đã đăng nhập → không làm gì (DOMContentLoaded đã gọi enterDashboard)
+    // Nếu chưa chọn page và có token → DOMContentLoaded đã gọi fetchUserPages rồi
+    // fbAsyncInit không cần gọi lại nữa vì fetchUserPages đã dùng server-side exchange
+    console.log('✅ Facebook SDK sẵn sàng (dùng cho login popup)');
+  }
+};
+
+// Inject SDK Script tag dynamically
+(function(d, s, id){
+  var js, fjs = d.getElementsByTagName(s)[0];
+  if (d.getElementById(id)) return;
+  js = d.createElement(s); js.id = id;
+  js.src = "https://connect.facebook.net/vi_VN/sdk.js";
+  fjs.parentNode.insertBefore(js, fjs);
+}(document, 'script', 'facebook-jssdk'));

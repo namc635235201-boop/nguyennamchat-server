@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>HƯỚNG DẪN VẬN HÀNH VÀ CẤU HÌNH CHATBOT AI</title>
+<style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333333; max-width: 800px; margin: 40px auto; padding: 20px; }
+    h1 { color: #1877f2; border-bottom: 2px solid #1877f2; padding-bottom: 10px; font-size: 24px; }
+    h2 { color: #3b5998; margin-top: 30px; font-size: 18px; border-left: 4px solid #3b5998; padding-left: 10px; }
+    p, li { font-size: 14px; }
+    code { background-color: #f1f1f1; padding: 2px 6px; border-radius: 4px; font-family: Consolas, monospace; font-size: 13px; color: #c7254e; }
+    pre { background-color: #f8f9fa; border: 1px solid #e9ecef; padding: 15px; border-radius: 6px; font-family: Consolas, monospace; font-size: 13px; overflow-x: auto; }
+    .highlight { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0; border-radius: 4px; }
+    .success { background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 15px 0; border-radius: 4px; }
+    .step-num { display: inline-block; background-color: #1877f2; color: white; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 50%; font-weight: bold; margin-right: 10px; }
+</style>
+</head>
+<body>
+
+<h1>📘 TÀI LIỆU HƯỚNG DẪN CẤU HÌNH & VẬN HÀNH CHATBOT AI</h1>
+
+<div class="success">
+    <strong>TÌNH TRẠNG HIỆN TẠI:</strong> Hệ thống đã được nâng cấp hoàn chỉnh. File click-and-run <code>chay_chatbot.bat</code> đã được tối ưu hóa toàn bộ các lỗi cú pháp, tích hợp tên miền cố định vĩnh viễn và hoạt động hoàn hảo!
+</div>
+
+<h2>1. THÔNG TIN HỆ THỐNG CỐ ĐỊNH</h2>
+<ul>
+    <li><strong>Tên miền Ngrok cố định:</strong> <code>https://nonevangelical-sabina-unspuriously.ngrok-free.dev</code></li>
+    <li><strong>Webhook Callback URL:</strong> <code>https://nonevangelical-sabina-unspuriously.ngrok-free.dev/webhook</code></li>
+    <li><strong>Verify Token (Mã xác minh):</strong> <code>mysecrettoken123</code></li>
+    <li><strong>Cổng chạy cục bộ (Local Port):</strong> <code>3000</code></li>
+</ul>
+
+<h2>2. BẬT HỆ THỐNG CHỈ VỚI 1 CLICK (File chay_chatbot.bat)</h2>
+<p>Bạn chỉ cần vào thư mục <code>D:\chatbot</code> và nhấp đúp chuột chạy file <code>chay_chatbot.bat</code>. Hệ thống sẽ tự động thực hiện quy trình sau:</p>
+<ol>
+    <li>Tắt sạch các phiên làm việc của Node và Ngrok cũ để tránh xung đột cổng.</li>
+    <li>Khởi chạy server Node.js chạy ngầm.</li>
+    <li>Khởi chạy Ngrok với tên miền cố định <code>nonevangelical-sabina-unspuriously.ngrok-free.dev</code>.</li>
+    <li>Tự động lấy liên kết công khai và kích hoạt mở trình duyệt đưa bạn thẳng tới trang Dashboard điều khiển.</li>
+</ol>
+
+<h2>3. CẤU HÌNH TRÊN FACEBOOK DEVELOPERS (Chỉ làm 1 lần duy nhất)</h2>
+<div class="highlight">
+    <strong>Lưu ý:</strong> Do bạn dùng tên miền cố định nên các bước cấu hình dưới đây chỉ cần làm <strong>ĐÚNG 1 LẦN DUY NHẤT</strong>. Sau này bật bot lên là tự động chạy, không bao giờ phải sửa lại!
+</div>
+
+<p><span class="step-num">1</span> <strong>Bật JavaScript SDK & Thêm tên miền tin cậy:</strong></p>
+<ul>
+    <li>Truy cập <a href="https://developers.facebook.com/apps/759513787182248/business-login/settings/" target="_blank">Trang Cài đặt Business Login của App</a>.</li>
+    <li>Đảm bảo tùy chọn <strong>"Đăng nhập bằng JavaScript SDK"</strong> đang chọn <strong>"Có"</strong>.</li>
+    <li>Tại ô <strong>"Miền được phép cho JavaScript SDK"</strong>, dán liên kết sau và nhấn <strong>Enter</strong>:
+        <pre>https://nonevangelical-sabina-unspuriously.ngrok-free.dev</pre>
+    </li>
+    <li>Cuộn xuống cuối trang bấm <strong>"Lưu thay đổi"</strong>.</li>
+</ul>
+
+<p><span class="step-num">2</span> <strong>Nhận quyền truy cập nâng cao:</strong></p>
+<ul>
+    <li>Ở khung thông báo màu vàng trên cùng trang cài đặt, bấm vào <strong>"Nhận quyền truy cập nâng cao"</strong> cho tính năng <code>public_profile</code> để kích hoạt quyền đăng nhập.</li>
+</ul>
+
+<p><span class="step-num">3</span> <strong>Cấu hình Webhook Messenger:</strong></p>
+<ul>
+    <li>Ở cột menu trái, vào phần <strong>Messenger</strong> -> <strong>Cài đặt</strong> (hoặc phần Webhooks).</li>
+    <li>Tại mục Webhook, chọn thiết lập và nhập:
+        <ul>
+            <li><strong>Callback URL:</strong> <code>https://nonevangelical-sabina-unspuriously.ngrok-free.dev/webhook</code></li>
+            <li><strong>Verify Token:</strong> <code>mysecrettoken123</code></li>
+        </ul>
+    </li>
+    <li>Bấm <strong>Xác minh và lưu</strong>.</li>
+    <li>Nhấn nút <strong>Đăng ký (Subscribe)</strong> cho 2 trường sự kiện: <code>messages</code> và <code>messaging_postbacks</code>.</li>
+</ul>
+
+<h2>4. QUY TRÌNH KIỂM TRA (TESTING)</h2>
+<ol>
+    <li>Chạy file <code>chay_chatbot.bat</code> trên máy tính của bạn.</li>
+    <li>Truy cập dashboard, bấm <strong>Đăng nhập bằng Facebook</strong> và cấp quyền cho Fanpage <strong>Nguyen Nam Ads</strong>.</li>
+    <li>Dùng nick Facebook cá nhân của bạn gửi tin nhắn trực tiếp vào Fanpage để test xem chatbot phản hồi tự động theo kịch bản đã soạn chưa.</li>
+</ol>
+
+<p style="text-align: center; color: #888888; font-size: 12px; margin-top: 50px;">
+    Tài liệu được biên soạn tự động bởi Trợ lý AI Antigravity - Nguyễn Nam Ads Chatbot System.
+</p>
+
+</body>
+</html>
