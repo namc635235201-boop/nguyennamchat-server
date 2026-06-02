@@ -1025,7 +1025,8 @@ select.settings-input option {
   gap: 8px;
 }
 
-.key-row input {
+.key-row input,
+.key-row textarea {
   flex: 1;
   background: var(--input-glass);
   border: 1px solid var(--border-glass);
@@ -1038,7 +1039,14 @@ select.settings-input option {
   font-family: 'Fira Code', monospace;
 }
 
-.key-row input:focus {
+.key-row textarea {
+  min-height: 74px;
+  resize: vertical;
+  line-height: 1.35;
+}
+
+.key-row input:focus,
+.key-row textarea:focus {
   border-color: #3b82f6;
   box-shadow: 0 0 0 2px var(--input-focus);
 }
@@ -1058,6 +1066,37 @@ select.settings-input option {
 
 .key-row button:hover {
   background: #2563eb;
+}
+
+.key-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  min-height: 0;
+}
+
+.key-list-empty,
+.key-chip {
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 11.5px;
+  line-height: 1;
+}
+
+.key-chip {
+  background: rgba(16, 185, 129, 0.12);
+  color: #86efac;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  font-family: 'Fira Code', monospace;
+}
+
+.key-list-empty {
+  background: rgba(148, 163, 184, 0.08);
+  color: #94a3b8;
 }
 
 .get-key-link {

@@ -123,16 +123,18 @@ Bạn là nhân viên tư vấn của Shop ABC...
       <div class="settings-group">
         <label class="settings-label">🔑 Groq API Key (Miễn phí)</label>
         <div class="key-row">
-          <input type="password" id="grok-key" placeholder="gsk_..." />
+          <textarea id="grok-key" rows="3" placeholder="gsk_1...&#10;gsk_2..."></textarea>
           <button onclick="saveKey()">Lưu</button>
         </div>
-        <a href="https://console.groq.com" target="_blank" class="get-key-link">→ Lấy API Key miễn phí tại console.groq.com</a>
+        <div id="groq-key-list" class="key-list"></div>
+        <span style="font-size:11px;color:#94a3b8;margin-top:4px;display:block">💡 Mỗi dòng một key, hoặc cách nhau bằng dấu phẩy. Khi key bị giới hạn, bot tự đổi sang key tiếp theo.</span>
+        <a href="https://console.groq.com" target="_blank" class="get-key-link" style="margin-top:4px;display:inline-block">→ Lấy API Key miễn phí tại console.groq.com</a>
         <span id="key-status"></span>
       </div>
 
       <div class="settings-group">
         <label class="settings-label">🏪 Tên shop hiển thị</label>
-        <input type="text" id="shop-name-input" class="settings-input" value="Nguyễn Nam Ads" placeholder="Tên shop của bạn" />
+        <input type="text" id="shop-name-input" class="settings-input" value="Fanpage cua ban" placeholder="Tên shop của bạn" />
       </div>
 
       <div class="settings-group">
@@ -259,7 +261,7 @@ Bạn là nhân viên tư vấn của Shop ABC...
         <span class="ms-online-dot"></span>
       </div>
       <div class="ms-header-info">
-        <div class="ms-name" id="ms-shop-name">Nguyễn Nam Ads</div>
+        <div class="ms-name" id="ms-shop-name">Fanpage cua ban</div>
         <div class="ms-status" id="ms-status">🟢 Đang hoạt động</div>
       </div>
       <div class="ms-header-icons">

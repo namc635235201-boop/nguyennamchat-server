@@ -2,9 +2,55 @@
 //  CHATBOT DATA & CONFIG
 // =============================================
 
-let SHOP_NAME = "Nguyễn Nam Ads";
-let BOT_AVATAR = "https://ui-avatars.com/api/?name=Nguyen+Nam+Ads&background=1877f2&color=fff&size=28";
+let SHOP_NAME = "Fanpage cua ban";
+let BOT_AVATAR = "https://ui-avatars.com/api/?name=Fanpage&background=1877f2&color=fff&size=28";
 let SERVER_URL = localStorage.getItem('server_url') || ((window.location.protocol !== 'file:') ? window.location.origin : 'http://localhost:3000');
+
+const CLEAN_DEFAULT_CUSTOMER_SCRIPT = `Ban la nhan vien tu van cua "[TEN THUONG HIEU]".
+
+THONG TIN LIEN HE:
+- Hotline/Zalo: [SO HOTLINE/ZALO]
+- Dia chi: [DIA CHI]
+- Website: [WEBSITE]
+
+DICH VU / SAN PHAM CHINH:
+- [DICH VU HOAC SAN PHAM 1]
+- [DICH VU HOAC SAN PHAM 2]
+- [DICH VU HOAC SAN PHAM 3]
+
+BANG GIA / GOI DICH VU:
+- [GOI 1]: [GIA / MO TA]
+- [GOI 2]: [GIA / MO TA]
+- [GOI 3]: [GIA / MO TA]
+
+MUC TIEU:
+Tu van nhu nguoi that, tra loi ngan gon, hoi dung nhu cau va huong khach qua Hotline/Zalo da cau hinh de trao doi nhanh hon.
+
+QUY TAC TRA LOI:
+- Moi lan tra loi 1-3 cau ngan.
+- Neu khach chao, phai chao lai va hoi khach can ho tro gi.
+- Neu khach hoi gia, bao dung bang gia trong kich ban, khong tu bia gia.
+- Neu khach hoi dich vu/san pham nao, bam theo dung noi dung khach hoi.
+- Neu chua du thong tin de bao gia, hoi them nhu cau va moi khach gui thong tin qua Hotline/Zalo da cau hinh.
+- Thinh thoang dung toi da 1 emoji phu hop, khong spam emoji.
+- Khong nhac dich vu ngoai kich ban neu khach khong hoi.
+
+CAU CHAO MAU:
+"Da em chao anh/chi a 😊 Em la tu van vien cua [TEN THUONG HIEU]. Anh/chi can em ho tro phan nao a?"
+
+KHI KHACH HOI HOTLINE / ZALO:
+"Da Hotline/Zalo ben em la [SO HOTLINE/ZALO] a."
+
+KHI KHACH HOI DIA CHI:
+"Da dia chi ben em o [DIA CHI] a."
+
+KHI KHACH HOI WEBSITE:
+"Da website ben em la [WEBSITE] a."
+
+KHONG DUOC LAM:
+- Khong dung thong tin, so dien thoai, dia chi hoac bang gia cua doanh nghiep khac.
+- Khong tra loi dai dong khi khach hoi don gian.
+- Khong tu tao gia, cam ket hoac chinh sach neu kich ban chua co.`;
 
 const PRODUCTS = [
   {
@@ -54,6 +100,8 @@ let selectedProduct = null;
 let orderData = {};
 let orders = [];
 let groqApiKey = "";
+const groqKeyCooldowns = {};
+const GROQ_KEY_COOLDOWN_MS = 60 * 1000;
 let isTyping = false;
 
 // Facebook auth data (real)
@@ -243,23 +291,63 @@ async function botRespond(fn, delay = 1200) {
 // =============================================
 //  GROQ AI CALL
 // =============================================
+function parseGroqApiKeys(value) {
+  return [...new Set(
+    String(value || "")
+      .split(/[\s,;]+/)
+      .map(k => k.trim())
+      .filter(Boolean)
+  )];
+}
+
+function formatGroqApiKeys(value) {
+  return parseGroqApiKeys(value).join("\n");
+}
+
+function renderGroqKeyList(value) {
+  const list = document.getElementById('groq-key-list');
+  if (!list) return;
+  const keys = parseGroqApiKeys(value);
+  if (!keys.length) {
+    list.innerHTML = '<span class="key-list-empty">Chưa có API key</span>';
+    return;
+  }
+  list.innerHTML = `<span class="key-list-empty">Đang lưu ${keys.length} key</span>` +
+    keys.map((key, index) => `<span class="key-chip">Key ${index + 1}: ${escHtml(key)}</span>`).join("");
+}
+
+function getConfiguredGroqKeys() {
+  const keyInput = document.getElementById('grok-key');
+  return parseGroqApiKeys(keyInput?.value || groqApiKey);
+}
+
+function isGroqKeyCoolingDown(key) {
+  const until = groqKeyCooldowns[key];
+  if (!until) return false;
+  if (Date.now() >= until) {
+    delete groqKeyCooldowns[key];
+    return false;
+  }
+  return true;
+}
+
+function setGroqKeyCooldown(key) {
+  groqKeyCooldowns[key] = Date.now() + GROQ_KEY_COOLDOWN_MS;
+}
+
 async function callGroqAI(userMessage) {
-  let keyToUse = groqApiKey;
+  let keysToUse = getConfiguredGroqKeys();
   let modelToUse = "llama-3.3-70b-versatile";
   let tempToUse = 0.7;
   let systemPrompt = localStorage.getItem('chatbot_script') || '';
-  
-  // Use config on screen
-  const keyInput = document.getElementById('grok-key');
-  if (keyInput && keyInput.value.trim()) keyToUse = keyInput.value.trim();
-  
+
   const modelSelect = document.getElementById('model-select');
   if (modelSelect) modelToUse = modelSelect.value;
   
   const tempSlider = document.getElementById('temperature');
   if (tempSlider) tempToUse = parseFloat(tempSlider.value);
 
-  if (!keyToUse) return null;
+  if (!keysToUse.length) return null;
   
   if (!systemPrompt) {
     const productList = PRODUCTS.map(p =>
@@ -272,8 +360,16 @@ Chính sách: Miễn ship nội thành, bảo hành theo sản phẩm, đổi tr
 Nếu khách muốn đặt hàng, hãy hướng dẫn họ gõ "đặt hàng".`;
   }
 
-  try {
-    const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const activeKeys = keysToUse.filter(k => !isGroqKeyCoolingDown(k));
+  const cooldownKeys = keysToUse.filter(k => isGroqKeyCoolingDown(k));
+  const orderedKeys = activeKeys.length ? [...activeKeys, ...cooldownKeys] : keysToUse;
+  let lastError = null;
+
+  for (const keyToUse of orderedKeys) {
+    if (isGroqKeyCoolingDown(keyToUse) && activeKeys.length) continue;
+
+    try {
+      const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -292,208 +388,76 @@ Nếu khách muốn đặt hàng, hãy hướng dẫn họ gõ "đặt hàng".`;
         max_tokens: 400
       })
     });
-    const data = await resp.json();
-    return data.choices?.[0]?.message?.content || null;
-  } catch(e) {
-    return null;
+
+      if (!resp.ok) {
+        const errorText = await resp.text().catch(() => "");
+        lastError = new Error(`Groq API ${resp.status}: ${errorText}`);
+        if (resp.status === 429) setGroqKeyCooldown(keyToUse);
+        continue;
+      }
+
+      const data = await resp.json();
+      const reply = data.choices?.[0]?.message?.content || null;
+      if (reply) {
+        delete groqKeyCooldowns[keyToUse];
+        return reply;
+      }
+    } catch(e) {
+      lastError = e;
+    }
   }
+
+  if (lastError) console.warn(lastError.message);
+  return null;
 }
 
 // =============================================
+// =============================================
 //  MAIN PROCESS MESSAGE
 // =============================================
+function isOrderConfirmed(text) {
+  const keywords = ["đã nhận đơn", "xác nhận đơn", "ghi nhận đơn", "đơn hàng của"];
+  return keywords.some(k => text.toLowerCase().includes(k));
+}
+
 async function processMessage(text) {
-  const customScript = localStorage.getItem('chatbot_script');
-  if (customScript && state !== STATE.COLLECT_NAME && state !== STATE.COLLECT_PHONE && state !== STATE.COLLECT_ADDRESS) {
-    if (groqApiKey) {
-      showTyping();
-      const aiReply = await callGroqAI(text);
-      removeTyping();
-      if (aiReply) {
-        appendBotBubble(escHtml(aiReply).replace(/\n/g, "<br>"));
-        return;
-      }
-    }
+  if (!activePageId) {
+    appendBotBubble("⚠️ Vui lòng kết nối và chọn Fanpage ở cột bên trái để bắt đầu chat thử nghiệm.");
+    return;
   }
 
-  const intent = detectIntent(text);
-  const product = findProduct(text);
-
-  // --- STATE: Collecting order info ---
-  if (state === STATE.COLLECT_NAME) {
-    orderData.name = text;
-    state = STATE.COLLECT_PHONE;
-    await botRespond(() => {
-      appendBotBubble(`Cảm ơn <b>${escHtml(text)}</b>! 📞 Vui lòng cho shop biết <b>số điện thoại</b> của bạn:`);
+  showTyping();
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/test-chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        pageId: activePageId,
+        text: text,
+        senderId: "dashboard-test"
+      })
     });
-    return;
-  }
-
-  if (state === STATE.COLLECT_PHONE) {
-    if (!/[0-9]{9,11}/.test(text.replace(/\s/g,""))) {
-      await botRespond(() => {
-        appendBotBubble("⚠️ Số điện thoại chưa đúng định dạng. Vui lòng nhập lại (ví dụ: 0909123456):");
-      }, 800);
-      return;
-    }
-    orderData.phone = text;
-    state = STATE.COLLECT_ADDRESS;
-    await botRespond(() => {
-      appendBotBubble("📍 Cuối cùng, cho shop biết <b>địa chỉ giao hàng</b> của bạn nhé:");
-    });
-    return;
-  }
-
-  if (state === STATE.COLLECT_ADDRESS) {
-    orderData.address = text;
-    const order = {
-      ...orderData,
-      product: selectedProduct.name,
-      price: selectedProduct.priceStr,
-      time: new Date().toLocaleString("vi-VN")
-    };
-    orders.push(order);
-    state = STATE.DONE;
-    saveOrder(order);
-    await botRespond(() => {
-      appendOrderConfirm(order);
-    }, 1000);
-    setTimeout(() => {
-      appendQuickReplies([
-        { label: "🛍 Xem sản phẩm khác", value: "xem sản phẩm" },
-        { label: "📞 Liên hệ shop", value: "liên hệ" }
-      ]);
-      state = STATE.IDLE;
-    }, 1200);
-    return;
-  }
-
-  // --- STATE: Confirm order ---
-  if (state === STATE.CONFIRM_ORDER) {
-    if (/có|ok|đồng ý|xác nhận|muốn|đặt/i.test(text)) {
-      state = STATE.COLLECT_NAME;
-      await botRespond(() => {
-        appendBotBubble(`Tuyệt vời! 🎉 Để hoàn tất đơn hàng, vui lòng cho shop biết <b>họ tên</b> của bạn:`);
-      });
-      return;
-    } else if (/không|thôi|hủy/i.test(text)) {
-      state = STATE.IDLE;
-      await botRespond(() => {
-        appendBotBubble("Không sao ạ! 😊 Nếu cần tư vấn thêm, bạn cứ nhắn cho shop nhé~");
-      }, 800);
-      return;
-    }
-  }
-
-  // --- INTENT: Greeting ---
-  if (intent === "greeting" || text.trim().length < 3) {
-    state = STATE.IDLE;
-    await botRespond(() => {
-      appendBotBubble(`Chào bạn! 👋 Mình là trợ lý tự động của <b>${SHOP_NAME}</b>.<br>Bạn cần tư vấn về dịch vụ quảng cáo ạ?`);
-      appendQuickReplies([
-        { label: "📈 Dịch vụ Ads Facebook", value: "chạy quảng cáo" },
-        { label: "💰 Báo giá chi phí", value: "chi phí" },
-        { label: "🤝 Cam kết hiệu quả", value: "cam kết hiệu quả" }
-      ]);
-    }, 800);
-    return;
-  }
-
-  // --- INTENT: Ask products / ads ---
-  if (intent === "ask_products" || intent === "ask_price") {
-    state = STATE.SHOW_PRODUCTS;
-    await botRespond(() => {
-      appendBotBubble("Dạ bên em đang cung cấp các **dịch vụ Marketing chuyên nghiệp** sau ạ: 🔥");
-    }, 900);
-    setTimeout(async () => {
-      showTyping();
-      await new Promise(r => setTimeout(r, 800));
-      removeTyping();
-      appendProductCards(PRODUCTS);
-      appendQuickReplies([
-        { label: "🏆 Xem Tối ưu Ads", value: "Tối ưu ngân sách Ads" },
-        { label: "🎨 Xem Thiết kế Fanpage", value: "Thiết kế bài viết & Fanpage" }
-      ]);
-    }, 1200);
-    return;
-  }
-
-  // --- INTENT: Want to order ---
-  if (intent === "want_order") {
-    if (!selectedProduct) {
-      state = STATE.SHOW_PRODUCTS;
-      await botRespond(() => {
-        appendBotBubble("Bạn muốn đăng ký dịch vụ nào ạ? Bên em có các gói chính sau:");
-        appendProductCards(PRODUCTS);
-      });
-      return;
-    }
-    state = STATE.CONFIRM_ORDER;
-    await botRespond(() => {
-      appendBotBubble(`
-        Bạn muốn đăng ký gói <b>${selectedProduct.name}</b> – <span style="color:#e94560;font-weight:700">${selectedProduct.priceStr}</span> đúng không ạ?
-      `);
-      appendQuickReplies([
-        { label: "✅ Xác nhận đăng ký", value: "có đặt" },
-        { label: "❌ Chọn dịch vụ khác", value: "dịch vụ" }
-      ]);
-    });
-    return;
-  }
-
-  // --- INTENT: Ask warranty ---
-  if (intent === "ask_warranty") {
-    await botRespond(() => {
-      appendBotBubble(`🛡 Chính sách cam kết của bên em:<br>
-        • Cam kết tối ưu chi phí quảng cáo, hỗ trợ tối đa chuyển đổi ra đơn hàng.<br>
-        • Báo cáo ngân sách chi tiết hàng ngày.<br>
-        • Đồng hành, hỗ trợ thiết kế bài viết chuẩn ads.`);
-    }, 900);
-    return;
-  }
-
-  // --- INTENT: Ask shipping ---
-  if (intent === "ask_shipping") {
-    await botRespond(() => {
-      appendBotBubble(`💳 Quy trình thanh toán tại shop:<br>
-        • Thanh toán ngân sách quảng cáo theo ngày.<br>
-        • **Không phí trước** - chạy hiệu quả mới tính phí dịch vụ.<br>
-        • Quy trình rõ ràng, minh bạch giúp bạn hoàn toàn an tâm!`);
-    }, 900);
-    return;
-  }
-
-  // --- Product found in text ---
-  if (product) {
-    selectProduct(product.id, false);
-    return;
-  }
-
-  // --- AI fallback ---
-  if (groqApiKey) {
-    showTyping();
-    const aiReply = await callGroqAI(text);
+    
+    const data = await resp.json();
     removeTyping();
-    if (aiReply) {
-      appendBotBubble(escHtml(aiReply).replace(/\n/g, "<br>"));
-      appendQuickReplies([
-        { label: "📈 Dịch vụ Ads", value: "dịch vụ" },
-        { label: "🤝 Đăng ký ngay", value: "tư vấn" }
-      ]);
-      return;
+    
+    if (data.success && data.reply) {
+      appendBotBubble(escHtml(data.reply).replace(/\n/g, "<br>"));
+      
+      // Nếu là câu chốt đơn hàng, tự động tải lại danh sách đơn hàng
+      if (isOrderConfirmed(data.reply)) {
+        setTimeout(loadOrdersForActivePage, 1000);
+      }
+    } else {
+      appendBotBubble(`⚠️ Lỗi: ${data.error || "Không thể lấy phản hồi từ server."}`);
     }
+  } catch (err) {
+    removeTyping();
+    console.error("Lỗi kết nối server để test chat:", err);
+    appendBotBubble("⚠️ Không thể kết nối tới server. Vui lòng kiểm tra xem server backend đã chạy chưa.");
   }
-
-  // --- Default fallback ---
-  await botRespond(() => {
-    appendBotBubble("Dạ bên em chưa hiểu rõ ý bạn lắm 😅 Bạn có thể chọn:");
-    appendQuickReplies([
-      { label: "📈 Xem dịch vụ Ads", value: "dịch vụ" },
-      { label: "💰 Báo giá chi tiết", value: "chi phí" },
-      { label: "🤝 Chính sách cam kết", value: "cam kết hiệu quả" },
-      { label: "📞 Hotline liên hệ", value: "hotline liên hệ" }
-    ]);
-  }, 700);
 }
 
 // =============================================
@@ -593,15 +557,19 @@ function sendSuggest(el) {
 //  API KEY & SETTINGS
 // =============================================
 function saveKey() {
-  const key = document.getElementById("grok-key").value.trim();
+  const keyInput = document.getElementById("grok-key");
+  const keys = parseGroqApiKeys(keyInput.value);
+  const key = keys.join("\n");
   const status = document.getElementById("key-status");
-  if (!key) {
+  if (!keys.length) {
     status.textContent = "⚠️ Vui lòng nhập API key";
     status.style.color = "#ff8080";
     return;
   }
+  keyInput.value = key;
   groqApiKey = key;
   localStorage.setItem('groq_api_key', key);
+  renderGroqKeyList(key);
   status.textContent = "⏳ Đang lưu lên server...";
   status.style.color = "#ffd700";
 
@@ -615,7 +583,7 @@ function saveKey() {
     .then(r => r.json())
     .then(data => {
       if (data.success) {
-        status.textContent = "✅ Đã lưu! Key đã được đồng bộ lên server.";
+        status.textContent = `✅ Đã lưu ${keys.length} API key và đồng bộ lên server.`;
         status.style.color = "#6ee396";
       } else {
         status.textContent = "⚠️ Lưu local OK, nhưng server lỗi: " + data.error;
@@ -652,6 +620,13 @@ function switchTab(tabName) {
 }
 
 function loadSample() {
+  document.getElementById('script-input').value = CLEAN_DEFAULT_CUSTOMER_SCRIPT;
+  localStorage.setItem('chatbot_script', CLEAN_DEFAULT_CUSTOMER_SCRIPT);
+  if (activePageId) {
+    applyScript();
+  }
+  return;
+
   const sample = `Bạn là nhân viên tư vấn bán hàng của "Shop Điện Máy Hùng".
 Nhiệm vụ chính: Tư vấn sản phẩm, trả lời câu hỏi và hỗ trợ đặt hàng.
 
@@ -960,7 +935,8 @@ async function connectSelectedPages() {
 
   connectedPages = [];
   let successCount = 0;
-  const script = localStorage.getItem('chatbot_script') || '';
+  const script = localStorage.getItem('chatbot_script') || CLEAN_DEFAULT_CUSTOMER_SCRIPT;
+  localStorage.setItem('chatbot_script', script);
 
   for (const cb of checkboxes) {
     const pageId = cb.value;
@@ -1093,9 +1069,11 @@ async function changeActivePage(pageId) {
       document.getElementById('model-select').value = serverPage.model || 'llama-3.3-70b-versatile';
       document.getElementById('temperature').value = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
       document.getElementById('temp-val').textContent = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
-      document.getElementById('grok-key').value = serverPage.apiKey || '';
-      groqApiKey = serverPage.apiKey || '';
+      const pageApiKeys = formatGroqApiKeys(serverPage.apiKey || '');
+      document.getElementById('grok-key').value = pageApiKeys;
+      groqApiKey = pageApiKeys;
       localStorage.setItem('groq_api_key', groqApiKey);
+      renderGroqKeyList(groqApiKey);
     }
   } catch (e) {
     console.warn("Lỗi tải thông tin trang từ backend:", e.message);
@@ -1494,7 +1472,7 @@ function saveSettings() {
   const serverUrlVal = document.getElementById('server-url-input').value.trim();
   const modelVal = document.getElementById('model-select').value;
   const tempVal = document.getElementById('temperature').value;
-  const apiKeyVal = document.getElementById('grok-key').value.trim();
+  const apiKeyVal = formatGroqApiKeys(document.getElementById('grok-key').value);
   const status = document.getElementById('settings-status');
   
   if (serverUrlVal) {
@@ -1531,8 +1509,10 @@ function saveSettings() {
         document.getElementById('shop-avatar-initial').textContent = shopNameVal.charAt(0).toUpperCase();
         BOT_AVATAR = `https://ui-avatars.com/api/?name=${encodeURIComponent(shopNameVal)}&background=1877f2&color=fff&size=28`;
         
+        document.getElementById('grok-key').value = apiKeyVal;
         groqApiKey = apiKeyVal;
         localStorage.setItem('groq_api_key', apiKeyVal);
+        renderGroqKeyList(apiKeyVal);
         status.innerHTML = `<span style="color:#6ee396">✅ Đã cập nhật cấu hình cho trang thành công!</span>`;
       } else {
         status.innerHTML = `<span style="color:#ff8080">⚠️ Lỗi: ${data.error}</span>`;
@@ -1602,9 +1582,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   } catch (e) {}
 
   // Load API Key
-  groqApiKey = localStorage.getItem('groq_api_key') || '';
+  groqApiKey = formatGroqApiKeys(localStorage.getItem('groq_api_key') || '');
   const keyInput = document.getElementById('grok-key');
   if (keyInput) keyInput.value = groqApiKey;
+  renderGroqKeyList(groqApiKey);
 
   // Load server URL
   const savedServerUrl = localStorage.getItem('server_url') || ((window.location.protocol !== 'file:') ? window.location.origin : 'http://localhost:3000');

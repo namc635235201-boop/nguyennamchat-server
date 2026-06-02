@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.log
+webhook_logs.json
+users.json
+orders.json
+platform_users.json
+pages.json
+# Không exclude frontend files - cần cho Railway
+# index.html, dashboard.html, style.css, app.js được deploy cùng
