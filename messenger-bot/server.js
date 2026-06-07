@@ -11,9 +11,11 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
+const multer = require("multer");
 const SCRIPT = require("./script");
 
 const app = express();
+app.set("trust proxy", true);
 app.use(bodyParser.json());
 
 // CORS Middleware + bypass ngrok browser warning (cho phép Facebook webhook truy cập)
@@ -32,6 +34,9 @@ const ORDERS_FILE = path.join(__dirname, "orders.json");
 const CONFIG_FILE = path.join(__dirname, "config.json");
 const USERS_FILE = path.join(__dirname, "users.json");
 const PLATFORM_USERS_FILE = path.join(__dirname, "platform_users.json");
+const UPLOADS_DIR = path.join(__dirname, "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 // Chat History Cache per customer (sender_id)
 const chatHistory = {};
@@ -40,6 +45,24 @@ const MAX_HISTORY = 6;
 // API Key Cooldown Tracker: key → timestamp khi hết cooldown
 // Khi key bị 429, nghỉ 60 giây rồi tự kích hoạt lại
 const keyCooldowns = {};
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
+      const safeExt = [".jpg", ".jpeg", ".png", ".gif", ".webp"].includes(ext) ? ext : ".jpg";
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExt}`);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!/^image\/(jpeg|png|gif|webp)$/.test(file.mimetype || "")) {
+      return cb(new Error("Chi ho tro anh JPG, PNG, GIF hoac WEBP."));
+    }
+    cb(null, true);
+  }
+});
+const IMAGE_MARKER_RE = /(?:\[\s*(?:IMAGE|IMG|ANH|HINH|ẢNH|HÌNH)\s*:?\s*(https?:\/\/[^\]\s<>"')]+)\s*\]|(?:^|\s)(?:IMAGE|IMG|ANH|HINH|ẢNH|HÌNH)\s*:\s*(https?:\/\/[^\s<>"')\]]+))/giu;
 const KEY_COOLDOWN_MS = 60 * 1000; // 60 giây
 
 const KNOWN_INDUSTRY_KEYWORDS = [
@@ -246,7 +269,7 @@ function getQuickReply(userText, script, pageConfig = {}) {
     return `Dạ website bên em là ${profile.website} ạ.`;
   }
 
-  // Tất cả câu hỏi còn lại (giá, ngành hàng, tư vấn...) → Groq AI xử lý theo kịch bản
+  // Tất cả câu hỏi còn lại (giá, ngành hàng, tư vấn...) → AI xử lý theo kịch bản
   return "";
 }
 
@@ -257,6 +280,14 @@ function parseGroqApiKeys(value) {
       .map(k => k.trim())
       .filter(Boolean)
   )];
+}
+
+function parseProviderApiKeys(value, aiProvider = "openrouter") {
+  const provider = normalizeAIProvider(aiProvider);
+  return parseGroqApiKeys(value).filter(key => {
+    if (provider === "openrouter") return key.startsWith("sk-or-");
+    return key.startsWith("gsk_");
+  });
 }
 
 // =============================================
@@ -351,8 +382,9 @@ function getConfig() {
     fbAppId: process.env.FB_APP_ID || fileConfig.fbAppId || ORIGINAL_ENV.FB_APP_ID || "",
     fbAppSecret: process.env.FB_APP_SECRET || process.env.APP_SECRET || fileConfig.fbAppSecret || ORIGINAL_ENV.FB_APP_SECRET || "",
     verifyToken: process.env.VERIFY_TOKEN || fileConfig.verifyToken || ORIGINAL_ENV.VERIFY_TOKEN || "mysecrettoken123",
-    groqApiKey: process.env.GROQ_API_KEY || fileConfig.groqApiKey || ORIGINAL_ENV.GROQ_API_KEY || "",
-    groqModel: process.env.GROQ_MODEL || fileConfig.groqModel || ORIGINAL_ENV.GROQ_MODEL || "llama-3.3-70b-versatile"
+    groqApiKey: fileConfig.groqApiKey || "",
+    groqModel: fileConfig.groqModel || "meta-llama/llama-3.1-8b-instruct",
+    aiProvider: fileConfig.aiProvider || "openrouter"
   };
 }
 
@@ -393,7 +425,8 @@ function savePage(pageId, pageName, pageToken, script) {
     name: pageName,
     token: pageToken || config.pageAccessToken || "", 
     script: script || SCRIPT, 
-    model: pages[pageId]?.model || config.groqModel || "llama-3.3-70b-versatile",
+    model: pages[pageId]?.model || "meta-llama/llama-3.1-8b-instruct",
+    aiProvider: pages[pageId]?.aiProvider || config.aiProvider || "openrouter",
     temperature: pages[pageId]?.temperature !== undefined ? pages[pageId].temperature : 0.7,
     apiKey: pages[pageId]?.apiKey || "",
     updatedAt: new Date().toISOString()
@@ -559,6 +592,21 @@ app.post("/api/save-config", (req, res) => {
   res.json({ success: true });
 });
 
+app.post("/api/upload-image", imageUpload.single("image"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: "Chua co file anh." });
+  }
+
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const host = req.get("host");
+  const imageUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+  res.json({
+    success: true,
+    url: imageUrl,
+    marker: `[IMAGE: ${imageUrl}]`
+  });
+});
+
 // API to reset all system data
 app.post("/api/reset-all", (req, res) => {
   try {
@@ -576,7 +624,8 @@ app.post("/api/reset-all", (req, res) => {
       fbAppSecret: "",
       verifyToken: "mysecrettoken123",
       groqApiKey: "",
-      groqModel: "llama-3.3-70b-versatile"
+      groqModel: "meta-llama/llama-3.1-8b-instruct",
+      aiProvider: "openrouter"
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(defaultConfig, null, 2));
     
@@ -584,8 +633,8 @@ app.post("/api/reset-all", (req, res) => {
     process.env.FB_APP_ID = defaultConfig.fbAppId || ORIGINAL_ENV.FB_APP_ID;
     process.env.FB_APP_SECRET = defaultConfig.fbAppSecret || ORIGINAL_ENV.FB_APP_SECRET;
     process.env.VERIFY_TOKEN = defaultConfig.verifyToken || ORIGINAL_ENV.VERIFY_TOKEN;
-    process.env.GROQ_API_KEY = defaultConfig.groqApiKey || ORIGINAL_ENV.GROQ_API_KEY;
-    process.env.GROQ_MODEL = defaultConfig.groqModel || ORIGINAL_ENV.GROQ_MODEL;
+    process.env.GROQ_API_KEY = "";
+    process.env.GROQ_MODEL = defaultConfig.groqModel;
     
     console.log("🚨 ĐÃ RESET TOÀN BỘ HỆ THỐNG VỀ MẶC ĐỊNH!");
     res.json({ success: true });
@@ -596,7 +645,7 @@ app.post("/api/reset-all", (req, res) => {
 
 // API to update settings for a Fanpage
 app.post("/api/update-settings", (req, res) => {
-  const { pageId, shopName, model, temperature, apiKey } = req.body;
+  const { pageId, shopName, model, temperature, apiKey, aiProvider } = req.body;
   if (!pageId) {
     return res.status(400).json({ error: "Missing pageId parameter" });
   }
@@ -608,6 +657,7 @@ app.post("/api/update-settings", (req, res) => {
 
   if (shopName) pages[pageId].name = shopName;
   if (model) pages[pageId].model = model;
+  if (aiProvider) pages[pageId].aiProvider = aiProvider;
   if (temperature !== undefined) pages[pageId].temperature = parseFloat(temperature);
   if (apiKey !== undefined) pages[pageId].apiKey = apiKey;
   pages[pageId].updatedAt = new Date().toISOString();
@@ -774,7 +824,7 @@ app.post("/api/test-chat", async (req, res) => {
   const mockSender = senderId || "dashboard-test";
   try {
     const reply = await generateBotResponse(text, pageId, mockSender);
-    res.json({ success: true, reply });
+    res.json({ success: true, reply: getReplyText(reply), images: getReplyImages(reply) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -876,21 +926,22 @@ async function generateBotResponse(userText, pageId, senderId) {
   const config = getConfig();
 
   let script = pageConfig.script || SCRIPT;
-  let model = pageConfig.model || config.groqModel || "llama-3.3-70b-versatile";
-  let temperature = pageConfig.temperature !== undefined ? parseFloat(pageConfig.temperature) : 0.7;
+  let aiProvider = pageConfig.aiProvider || config.aiProvider || "openrouter";
+  let model = pageConfig.model || config.groqModel || "meta-llama/llama-3.1-8b-instruct";
+  let temperature = pageConfig.temperature !== undefined ? parseFloat(pageConfig.temperature) : 0.3;
 
   let apiKeys = [];
   if (pageConfig.apiKey) {
-    apiKeys.push(...parseGroqApiKeys(pageConfig.apiKey));
+    apiKeys.push(...parseProviderApiKeys(pageConfig.apiKey, aiProvider));
   }
   if (config.groqApiKey) {
-    apiKeys.push(...parseGroqApiKeys(config.groqApiKey));
+    apiKeys.push(...parseProviderApiKeys(config.groqApiKey, aiProvider));
   }
   apiKeys = [...new Set(apiKeys)];
 
   // Luôn gọi AI cho mọi tin nhắn — không dùng quick reply cứng
   if (apiKeys.length === 0) {
-    throw new Error("Chưa cấu hình Groq API Key cho Page ID này hoặc hệ thống.");
+    throw new Error(`Chua cau hinh ${getProviderLabel(aiProvider)} API Key cho Page ID nay hoac he thong.`);
   }
 
   // Initialize conversation history
@@ -907,25 +958,27 @@ async function generateBotResponse(userText, pageId, senderId) {
     chatHistory[senderId] = chatHistory[senderId].slice(-MAX_HISTORY);
   }
 
-  // Gọi Groq AI — retry với tất cả key, nếu thất bại thì đợi 2s rồi thử lại 1 lần nữa
+  // Gọi AI — retry với tất cả key, nếu thất bại thì đợi 2s rồi thử lại 1 lần nữa
   try {
-    const aiReply = await callGroqAIWithRetry(senderId, chatHistory[senderId], script, model, temperature, apiKeys);
+    const aiReply = await callGroqAIWithRetry(senderId, chatHistory[senderId], script, model, temperature, apiKeys, aiProvider);
+    const parsedReply = parseBotReplyMedia(aiReply);
     chatHistory[senderId].push({
       role: "assistant",
-      content: aiReply
+      content: parsedReply.text || aiReply
     });
-    return aiReply;
+    return parsedReply;
   } catch (aiErr) {
     console.error("⚠️ Lần 1 thất bại, đợi 2s rồi thử lại...", aiErr.message);
     // Retry lần cuối sau 2 giây
     try {
       await sleep(2000);
-      const aiReply2 = await callGroqAIWithRetry(senderId, chatHistory[senderId], script, model, temperature, apiKeys);
+      const aiReply2 = await callGroqAIWithRetry(senderId, chatHistory[senderId], script, model, temperature, apiKeys, aiProvider);
+      const parsedReply2 = parseBotReplyMedia(aiReply2);
       chatHistory[senderId].push({
         role: "assistant",
-        content: aiReply2
+        content: parsedReply2.text || aiReply2
       });
-      return aiReply2;
+      return parsedReply2;
     } catch (aiErr2) {
       console.error("❌ Lần 2 cũng thất bại:", aiErr2.message);
       const profile = getTenantProfile(script, pageConfig);
@@ -936,7 +989,7 @@ async function generateBotResponse(userText, pageId, senderId) {
         role: "assistant",
         content: fallbackMsg
       });
-      return fallbackMsg;
+      return { text: fallbackMsg, images: [] };
     }
   }
 }
@@ -956,30 +1009,42 @@ async function handleMessage(senderId, userText, pageId) {
       return;
     }
 
-    // Send typing indicator
-    await sendTyping(senderId, true, token);
+    // Typing indicators must not block the actual reply flow.
+    sendTyping(senderId, true, token).catch(err => {
+      console.warn("⚠️ Không gửi được typing_on:", err.response?.data || err.message);
+    });
 
     // Generate response using shared logic
     const reply = await generateBotResponse(userText, pageId, senderId);
 
     // Turn off typing indicator
-    await sendTyping(senderId, false, token);
+    sendTyping(senderId, false, token).catch(err => {
+      console.warn("⚠️ Không gửi được typing_off:", err.response?.data || err.message);
+    });
 
     // Send messages back to user
-    const parts = splitMessage(reply, 2000);
-    for (const part of parts) {
-      await sendTextMessage(senderId, part, token);
-      if (parts.length > 1) await sleep(500);
+    const replyText = getReplyText(reply);
+    const replyImages = getReplyImages(reply);
+    if (replyImages.length) {
+      await sendImageTemplateMessage(senderId, replyText, replyImages, token);
+      console.log(`🖼️ Đã gửi ${replyImages.length} template ảnh cho khách ${senderId}`);
+    } else {
+      const parts = splitMessage(replyText, 2000);
+      for (const part of parts) {
+        await sendTextMessage(senderId, part, token);
+        console.log(`💬 Đã gửi tin nhắn chữ cho khách ${senderId}`);
+        if (parts.length > 1) await sleep(500);
+      }
     }
 
     // Auto-detect and save order
-    if (isOrderConfirmed(reply)) {
-      saveOrder(senderId, userText, reply, pageId);
+    if (isOrderConfirmed(replyText)) {
+      saveOrder(senderId, userText, replyText, pageId);
     }
 
     // Track user conversation
     const pageName = pageConfig.name || pageId;
-    trackUser(senderId, pageId, pageName, userText, reply);
+    trackUser(senderId, pageId, pageName, userText, formatReplyForHistory(reply));
 
   } catch (err) {
     console.error("❌ Lỗi xử lý tin nhắn:", err.message);
@@ -987,7 +1052,7 @@ async function handleMessage(senderId, userText, pageId) {
 }
 
 // =============================================
-//  GROQ AI CORE COMPLETION & RETRY HELPER (MULTI-KEY ROTATION + COOLDOWN)
+//  AI CORE COMPLETION & RETRY HELPER (MULTI-KEY ROTATION + COOLDOWN)
 // =============================================
 function isKeyCoolingDown(key) {
   const until = keyCooldowns[key];
@@ -1005,11 +1070,11 @@ function setCooldown(key) {
   console.warn(`⏸️ Key ${maskedKey} bị tạm nghỉ ${KEY_COOLDOWN_MS / 1000}s. Tự kích hoạt lại lúc ${new Date(keyCooldowns[key]).toLocaleTimeString('vi-VN')}`);
 }
 
-async function callGroqAIWithRetry(senderId, history, script, model, temperature, apiKeys, retries = 2, delay = 1000) {
+async function callGroqAIWithRetry(senderId, history, script, model, temperature, apiKeys, aiProvider = "openrouter", retries = 2, delay = 1000) {
   const allKeys = Array.isArray(apiKeys) ? apiKeys : [apiKeys];
   
   if (allKeys.length === 0) {
-    throw new Error("Không có Groq API Key nào được cấu hình!");
+    throw new Error(`Khong co ${getProviderLabel(aiProvider)} API Key nao duoc cau hinh!`);
   }
 
   // Ưu tiên key chưa bị cooldown trước, key đang cooldown xếp sau
@@ -1034,8 +1099,8 @@ async function callGroqAIWithRetry(senderId, history, script, model, temperature
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        console.log(`🤖 [Key ${i + 1}/${sortedKeys.length}] Gọi Groq AI với key: ${maskedKey}${isCooling ? ' (đang cooldown, thử lại)' : ''}`);
-        const result = await callGroqAI(senderId, history, script, model, temperature, key);
+        console.log(`🤖 [Key ${i + 1}/${sortedKeys.length}] Gọi ${getProviderLabel(aiProvider)} AI với key: ${maskedKey}${isCooling ? ' (đang cooldown, thử lại)' : ''}`);
+        const result = await callGroqAI(senderId, history, script, model, temperature, key, aiProvider);
         // Thành công → xóa cooldown nếu có
         if (keyCooldowns[key]) {
           delete keyCooldowns[key];
@@ -1064,15 +1129,28 @@ async function callGroqAIWithRetry(senderId, history, script, model, temperature
   throw lastError || new Error("Tất cả API Key dự phòng đều thất bại!");
 }
 
-async function callGroqAI(senderId, history, script, model, temperature, apiKey) {
+async function callGroqAI(senderId, history, script, model, temperature, apiKey, aiProvider = "openrouter") {
+  const provider = normalizeAIProvider(aiProvider);
+  const apiUrl = provider === "openrouter"
+    ? "https://openrouter.ai/api/v1/chat/completions"
+    : "https://api.groq.com/openai/v1/chat/completions";
+  const headers = {
+    "Authorization": `Bearer ${apiKey}`,
+    "Content-Type": "application/json"
+  };
+  if (provider === "openrouter") {
+    headers["HTTP-Referer"] = "https://nguyennamchat-production.up.railway.app";
+    headers["X-Title"] = "NGUYENNAMADS Chatbot";
+  }
+
   const response = await axios.post(
-    "https://api.groq.com/openai/v1/chat/completions",
+    apiUrl,
     {
       model: model,
       messages: [
         {
           role: "system",
-          content: script
+          content: buildSystemPromptWithImageRules(script)
         },
         ...history
       ],
@@ -1080,10 +1158,7 @@ async function callGroqAI(senderId, history, script, model, temperature, apiKey)
       temperature: temperature
     },
     {
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
+      headers,
       timeout: 15000
     }
   );
@@ -1108,6 +1183,57 @@ async function sendTextMessage(recipientId, text, token) {
   );
 }
 
+async function sendImageMessage(recipientId, imageUrl, token) {
+  await axios.post(
+    `https://graph.facebook.com/v19.0/me/messages`,
+    {
+      recipient: { id: recipientId },
+      message: {
+        attachment: {
+          type: "image",
+          payload: {
+            url: imageUrl,
+            is_reusable: true
+          }
+        }
+      },
+      messaging_type: "RESPONSE"
+    },
+    {
+      params: { access_token: token }
+    }
+  );
+}
+
+async function sendImageTemplateMessage(recipientId, text, imageUrls, token) {
+  const summary = buildTemplateSummary(text);
+  const elements = imageUrls.slice(0, 3).map((imageUrl, index) => ({
+    title: index === 0 ? "Bảng giá / thông tin gói" : `Thông tin gói ${index + 1}`,
+    image_url: imageUrl,
+    subtitle: summary
+  }));
+
+  await axios.post(
+    `https://graph.facebook.com/v19.0/me/messages`,
+    {
+      recipient: { id: recipientId },
+      message: {
+        attachment: {
+          type: "template",
+          payload: {
+            template_type: "generic",
+            elements
+          }
+        }
+      },
+      messaging_type: "RESPONSE"
+    },
+    {
+      params: { access_token: token }
+    }
+  );
+}
+
 // Send Typing Indicator
 async function sendTyping(recipientId, isOn, token) {
   await axios.post(
@@ -1117,7 +1243,8 @@ async function sendTyping(recipientId, isOn, token) {
       sender_action: isOn ? "typing_on" : "typing_off"
     },
     {
-      params: { access_token: token }
+      params: { access_token: token },
+      timeout: 3000
     }
   );
 }
@@ -1126,6 +1253,8 @@ async function sendTyping(recipientId, isOn, token) {
 //  UTILITY FUNCTIONS
 // =============================================
 function splitMessage(text, maxLen) {
+  text = String(text || "").trim();
+  if (!text) return [];
   if (text.length <= maxLen) return [text];
   const parts = [];
   let i = 0;
@@ -1138,6 +1267,76 @@ function splitMessage(text, maxLen) {
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
+}
+
+function normalizeAIProvider(value) {
+  return String(value || "openrouter").toLowerCase() === "groq" ? "groq" : "openrouter";
+}
+
+function getProviderLabel(value) {
+  return normalizeAIProvider(value) === "openrouter" ? "OpenRouter" : "Groq";
+}
+
+function buildSystemPromptWithImageRules(script) {
+  return `${script}
+
+IMAGE REPLY RULES:
+- You control when images are sent. The app sends an image only when your reply includes an image marker.
+- If the script contains a public image URL that is relevant to the customer's question, you MUST include that exact URL as a marker after your text: [IMAGE: https://example.com/image.jpg].
+- If the customer asks about price, price list, product/service details, examples, samples, design, menu, catalog, course information, or asks to see an image, and the script has a relevant image URL, do not omit the image marker.
+- Only use image URLs that are already present in the script or conversation. Do not invent image URLs.
+- Use at most 3 image markers in one reply.
+- The image URL must be public https/http so Facebook Messenger can fetch it.
+- Do not mention the marker syntax to customers.`;
+}
+
+function parseBotReplyMedia(reply) {
+  const raw = String(reply || "");
+  const images = [];
+  const text = raw.replace(IMAGE_MARKER_RE, (_match, bracketUrl, plainUrl) => {
+    const url = bracketUrl || plainUrl;
+    if (isPublicImageUrl(url) && !images.includes(url)) images.push(url);
+    return "";
+  }).replace(/\n{3,}/g, "\n\n").trim();
+
+  return {
+    text,
+    images: images.slice(0, 3)
+  };
+}
+
+function isPublicImageUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    return ["http:", "https:"].includes(parsed.protocol);
+  } catch (_err) {
+    return false;
+  }
+}
+
+function getReplyText(reply) {
+  if (typeof reply === "string") return parseBotReplyMedia(reply).text;
+  return String(reply?.text || "").trim();
+}
+
+function getReplyImages(reply) {
+  if (typeof reply === "string") return parseBotReplyMedia(reply).images;
+  return Array.isArray(reply?.images) ? reply.images.filter(isPublicImageUrl).slice(0, 3) : [];
+}
+
+function buildTemplateSummary(text) {
+  const clean = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const fallback = "Anh/chị xem thông tin gói giúp em. Nếu phù hợp, mình nhắn Zalo 0898377771 để bên em tư vấn chi tiết hơn ạ.";
+  const summary = clean || fallback;
+  return summary.length > 80 ? `${summary.slice(0, 77).trim()}...` : summary;
+}
+
+function formatReplyForHistory(reply) {
+  const text = getReplyText(reply);
+  const images = getReplyImages(reply);
+  return [text, ...images.map(url => `[IMAGE: ${url}]`)].filter(Boolean).join("\n");
 }
 
 function isOrderConfirmed(text) {
