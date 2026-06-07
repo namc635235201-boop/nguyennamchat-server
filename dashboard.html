@@ -84,33 +84,17 @@
     <!-- TAB: Script -->
     <div class="tab-content active" id="content-script">
       <div class="script-header">
-        <p class="script-desc">✏️ Viết kịch bản bên dưới. AI sẽ <b>ghi nhớ toàn bộ</b> và trả lời khách theo đúng nội dung này.</p>
+        <p class="script-desc">Tạo nhiều kịch bản con cho cùng một Fanpage. Mỗi mục có từ khóa, nội dung và ảnh riêng; khi áp dụng, tool sẽ tự ghép thành kịch bản tổng cho AI.</p>
         <div class="script-actions">
+          <button class="btn-outline" onclick="addScriptSection()">+ Thêm kịch bản</button>
           <button class="btn-outline" onclick="loadSample()">📄 Nạp mẫu</button>
           <button class="btn-outline" onclick="clearScript()">🗑 Xóa</button>
         </div>
       </div>
 
-      <textarea
-        id="script-input"
-        class="script-textarea"
-        placeholder="Ví dụ:
-Bạn là nhân viên tư vấn của Shop ABC...
-..."
-        spellcheck="false"
-      ></textarea>
+      <textarea id="script-input" class="script-textarea script-hidden-source" spellcheck="false"></textarea>
 
-      <div class="script-tips">
-        <div class="tip-title">💡 Nên viết kịch bản gồm:</div>
-        <div class="tips-grid">
-          <div class="tip-item">🏪 Tên shop & mô tả</div>
-          <div class="tip-item">📦 Dịch vụ + giá</div>
-          <div class="tip-item">📜 Chính sách thanh toán</div>
-          <div class="tip-item">🗣 Cách xưng hô, giọng điệu</div>
-          <div class="tip-item">🚫 Điều không được nói</div>
-          <div class="tip-item">📞 Khi nào chuyển hotline</div>
-        </div>
-      </div>
+      <div id="script-section-list" class="script-section-list"></div>
 
       <button class="btn-apply" onclick="applyScript()">
         ✅ Áp dụng kịch bản
