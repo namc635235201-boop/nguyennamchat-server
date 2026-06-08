@@ -414,7 +414,8 @@ function pickAdsFlow(userText, pageConfig = {}) {
 
 function buildAdsFlowReply(userText, script, pageConfig, pageId, senderId) {
   const profile = getTenantProfile(script, pageConfig);
-  if (!profile.hasAdsPricing) return null;
+  const configuredFlows = getAdsFlowsFromPageConfig(pageConfig);
+  if (!profile.hasAdsPricing && !configuredFlows.length) return null;
 
   const state = getAdsFlowState(pageId, senderId);
   const selectedFlow = pickAdsFlow(userText, pageConfig);
