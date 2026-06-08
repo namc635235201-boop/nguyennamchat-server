@@ -6,5 +6,6 @@ users.json
 orders.json
 platform_users.json
 pages.json
+conversation_locks.json
 # Không exclude frontend files - cần cho Railway
 # index.html, dashboard.html, style.css, app.js được deploy cùng

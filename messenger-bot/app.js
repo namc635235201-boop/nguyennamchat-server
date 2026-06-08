@@ -341,7 +341,7 @@ function setGroqKeyCooldown(key) {
 
 async function callGroqAI(userMessage) {
   let keysToUse = getConfiguredGroqKeys();
-  let modelToUse = "llama-3.3-70b-versatile";
+  let modelToUse = "meta-llama/llama-3.1-8b-instruct";
   let tempToUse = 0.7;
   let systemPrompt = localStorage.getItem('chatbot_script') || '';
 
@@ -373,11 +373,13 @@ Nếu khách muốn đặt hàng, hãy hướng dẫn họ gõ "đặt hàng".`;
     if (isGroqKeyCoolingDown(keyToUse) && activeKeys.length) continue;
 
     try {
-      const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${keyToUse}`
+        "Authorization": `Bearer ${keyToUse}`,
+        "HTTP-Referer": window.location.origin,
+        "X-Title": "NGUYENNAMADS Chatbot"
       },
       body: JSON.stringify({
         model: modelToUse,
@@ -395,7 +397,7 @@ Nếu khách muốn đặt hàng, hãy hướng dẫn họ gõ "đặt hàng".`;
 
       if (!resp.ok) {
         const errorText = await resp.text().catch(() => "");
-        lastError = new Error(`Groq API ${resp.status}: ${errorText}`);
+        lastError = new Error(`OpenRouter API ${resp.status}: ${errorText}`);
         if (resp.status === 429) setGroqKeyCooldown(keyToUse);
         continue;
       }
@@ -446,6 +448,10 @@ async function processMessage(text) {
     
     const data = await resp.json();
     removeTyping();
+
+    if (data.muted) {
+      return;
+    }
     
     if (data.success && data.reply) {
       appendBotBubble(escHtml(data.reply).replace(/\n/g, "<br>"));
@@ -582,7 +588,7 @@ function saveKey() {
     fetch(`${SERVER_URL}/api/update-settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pageId: activePageId, apiKey: key })
+        body: JSON.stringify({ pageId: activePageId, apiKey: key, aiProvider: 'openrouter' })
     })
     .then(r => r.json())
     .then(data => {
@@ -599,7 +605,7 @@ function saveKey() {
       status.style.color = "#ffd700";
     });
   } else {
-    status.textContent = "✅ Đã lưu! Bot sẽ dùng Groq AI cho câu hỏi ngoài kịch bản.";
+    status.textContent = "✅ Đã lưu! Bot sẽ dùng OpenRouter AI cho câu hỏi ngoài kịch bản.";
     status.style.color = "#6ee396";
   }
 }
@@ -624,6 +630,25 @@ function switchTab(tabName) {
 }
 
 let scriptSections = [];
+let selectedAdsFlowId = "";
+const DEFAULT_ADS_FLOW = {
+  id: "ads-flow-default",
+  name: "Chạy quảng cáo",
+  keywords: "chạy quảng cáo, chạy ads, quảng cáo facebook, báo giá quảng cáo, giá chạy qc",
+  greeting: "Dạ em chào anh/chị ạ, anh/chị đang cần bên em hỗ trợ gì ạ?",
+  askIndustry: "Dạ anh/chị đang muốn chạy quảng cáo cho ngành nghề, sản phẩm hoặc dịch vụ gì ạ?",
+  askExperience: "Dạ trước giờ anh/chị đã từng chạy quảng cáo Facebook chưa ạ, hay đây là lần đầu mình chạy?",
+  sendPriceText: "Dạ em gửi anh/chị bảng giá tham khảo bên em ạ, anh/chị xem giúp em nhé.",
+  dailyPriceText: "Dạ bên em nhận chạy tối thiểu 200.000đ/ngày và cần chạy ít nhất 7 ngày ạ.",
+  afterPriceFollowup: "Dạ anh/chị đang muốn chạy cho ngành nghề, sản phẩm hoặc dịch vụ gì ạ?",
+  zaloSoft: "Dạ anh/chị nhắn Zalo/Hotline 0898377771 giúp em nhé, em tư vấn kỹ hơn và lên phương án phù hợp cho mình ạ.",
+  zaloPackage: "Dạ anh/chị nhắn Zalo/Hotline 0898377771 giúp em nhé, em gửi chi tiết đúng gói này cho mình ạ.",
+  fallback: "Dạ anh/chị nhắn Zalo/Hotline 0898377771 giúp em nhé, em tư vấn kỹ hơn cho mình ạ.",
+  priceImage: "",
+  sendPriceFirst: true,
+  zaloOnlyAfterOk: true
+};
+let adsFlows = [];
 
 const DEFAULT_SCRIPT_SECTIONS = [
   {
@@ -690,6 +715,145 @@ function renderScriptSections() {
         <div id="image-upload-status-${id}" class="image-upload-status">${section.imageUrl ? `Ảnh hiện tại: ${escHtml(section.imageUrl)}` : ""}</div>
       </div>`;
   }).join("");
+}
+
+function createAdsFlow(data = {}) {
+  return {
+    ...DEFAULT_ADS_FLOW,
+    ...data,
+    id: data.id ?? `ads-flow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: data.name ?? DEFAULT_ADS_FLOW.name,
+    keywords: data.keywords ?? DEFAULT_ADS_FLOW.keywords,
+    greeting: data.greeting ?? DEFAULT_ADS_FLOW.greeting,
+    askIndustry: data.askIndustry ?? DEFAULT_ADS_FLOW.askIndustry,
+    askExperience: data.askExperience ?? DEFAULT_ADS_FLOW.askExperience,
+    sendPriceText: data.sendPriceText ?? DEFAULT_ADS_FLOW.sendPriceText,
+    dailyPriceText: data.dailyPriceText ?? DEFAULT_ADS_FLOW.dailyPriceText,
+    afterPriceFollowup: data.afterPriceFollowup ?? DEFAULT_ADS_FLOW.afterPriceFollowup,
+    zaloSoft: data.zaloSoft ?? DEFAULT_ADS_FLOW.zaloSoft,
+    zaloPackage: data.zaloPackage ?? DEFAULT_ADS_FLOW.zaloPackage,
+    fallback: data.fallback ?? DEFAULT_ADS_FLOW.fallback,
+    priceImage: data.priceImage ?? DEFAULT_ADS_FLOW.priceImage,
+    sendPriceFirst: data.sendPriceFirst !== undefined ? !!data.sendPriceFirst : DEFAULT_ADS_FLOW.sendPriceFirst,
+    zaloOnlyAfterOk: data.zaloOnlyAfterOk !== undefined ? !!data.zaloOnlyAfterOk : DEFAULT_ADS_FLOW.zaloOnlyAfterOk
+  };
+}
+
+function renderAdsFlows() {
+  const list = document.getElementById('ads-flow-list');
+  if (!list) return;
+
+  if (!adsFlows.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:18px">Chưa có flow cứng nào. Bấm "Thêm flow" để tạo flow mới.</div>';
+    return;
+  }
+
+  list.innerHTML = adsFlows.map((flow, index) => {
+    const id = escAttr(flow.id);
+    const isSelected = flow.id === selectedAdsFlowId;
+    const imageStatus = flow.priceImage
+      ? `<div class="upload-preview"><img src="${escAttr(flow.priceImage)}" alt="Ảnh bảng giá" /><span>Đã gắn ảnh bảng giá chính.</span></div>`
+      : "";
+    const renderFlowTextField = (field, label, placeholder, value) => `
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <label style="font-size:12px;color:#94a3b8;font-weight:600">${escHtml(label)}</label>
+        <div class="script-image-row">
+        <input class="settings-input" value="${escAttr(value)}" placeholder="${escAttr(placeholder)}" oninput="updateAdsFlow('${id}', '${field}', this.value)" />
+        <button class="btn-outline" type="button" onclick="clearAdsFlowField('${id}', '${field}')">✕</button>
+        </div>
+      </div>
+    `;
+    return `
+      <div class="script-section-card" data-flow-id="${id}">
+        <div class="script-section-title-row">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#e2e8f0;font-weight:600">
+            <input type="radio" name="selected-ads-flow" ${isSelected ? 'checked' : ''} onchange="selectAdsFlow('${id}')" />
+            Flow ${index + 1}
+          </label>
+          <button class="btn-outline" type="button" onclick="removeAdsFlow('${id}')">Xóa flow</button>
+        </div>
+        ${renderFlowTextField('name', 'Tên flow', 'Ví dụ: Chạy quảng cáo', flow.name)}
+        ${renderFlowTextField('keywords', 'Từ khóa nhận diện', 'Ví dụ: chạy quảng cáo, báo giá, giá ngày', flow.keywords)}
+        ${renderFlowTextField('greeting', 'Lời chào mở đầu', 'Câu chào đầu tiên', flow.greeting)}
+        ${renderFlowTextField('askIndustry', 'Câu hỏi ngành nghề', 'Hỏi khách đang làm ngành gì', flow.askIndustry)}
+        ${renderFlowTextField('askExperience', 'Câu hỏi đã từng chạy chưa', 'Hỏi khách đã từng chạy quảng cáo chưa', flow.askExperience)}
+        ${renderFlowTextField('sendPriceText', 'Câu gửi bảng giá', 'Câu đi kèm khi gửi ảnh bảng giá', flow.sendPriceText)}
+        ${renderFlowTextField('dailyPriceText', 'Câu trả lời giá ngày', 'Chỉ dùng khi khách hỏi giá ngày', flow.dailyPriceText)}
+        ${renderFlowTextField('afterPriceFollowup', 'Câu hỏi sau khi gửi giá', 'Ví dụ: hỏi lại ngành nghề hoặc nhu cầu', flow.afterPriceFollowup)}
+        ${renderFlowTextField('zaloSoft', 'Câu mời qua Zalo', 'Dùng khi khách muốn đi tiếp', flow.zaloSoft)}
+        ${renderFlowTextField('zaloPackage', 'Câu trả lời khi hỏi chi tiết gói', 'Dùng khi khách hỏi gói mà chưa có text rõ', flow.zaloPackage)}
+        ${renderFlowTextField('fallback', 'Câu fallback', 'Dùng khi khách hỏi ngoài kịch bản', flow.fallback)}
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="font-size:12px;color:#94a3b8;font-weight:600">Ảnh bảng giá chính</label>
+          <div class="script-image-row">
+          <input class="settings-input" value="${escAttr(flow.priceImage)}" placeholder="Link ảnh bảng giá chính" oninput="updateAdsFlow('${id}', 'priceImage', this.value)" />
+          <button class="btn-outline" type="button" onclick="document.getElementById('flow-price-image-file-${id}').click()">Tải ảnh</button>
+          </div>
+        </div>
+        <input type="file" id="flow-price-image-file-${id}" accept="image/*" style="display:none" onchange="uploadFlowImage(this, '${id}')" />
+        <div id="flow-image-upload-status-${id}" class="image-upload-status">${imageStatus}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1">
+            <input type="checkbox" ${flow.sendPriceFirst ? 'checked' : ''} onchange="updateAdsFlow('${id}', 'sendPriceFirst', this.checked)" />
+            Gửi bảng giá trước khi hỏi sâu
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#cbd5e1">
+            <input type="checkbox" ${flow.zaloOnlyAfterOk ? 'checked' : ''} onchange="updateAdsFlow('${id}', 'zaloOnlyAfterOk', this.checked)" />
+            Chỉ mời Zalo sau khi khách ok
+          </label>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function getAdsFlowFormValue() {
+  return adsFlows.map(flow => ({ ...flow }));
+}
+
+function setAdsFlowFormValue(flows = []) {
+  const source = Array.isArray(flows) ? flows : [];
+  if (!source.length) {
+    adsFlows = [createAdsFlow(DEFAULT_ADS_FLOW)];
+    selectedAdsFlowId = adsFlows[0].id;
+    renderAdsFlows();
+    return;
+  }
+  adsFlows = source.map(createAdsFlow);
+  if (!adsFlows.find(flow => flow.id === selectedAdsFlowId)) {
+    selectedAdsFlowId = adsFlows[0].id;
+  }
+  renderAdsFlows();
+}
+
+function updateAdsFlow(id, field, value) {
+  const flow = adsFlows.find(item => item.id === id);
+  if (!flow) return;
+  flow[field] = value;
+  if (field === 'priceImage') renderAdsFlows();
+}
+
+function clearAdsFlowField(id, field) {
+  const flow = adsFlows.find(item => item.id === id);
+  if (!flow) return;
+  flow[field] = field === 'name' ? `Flow ${adsFlows.findIndex(item => item.id === id) + 1}` : "";
+  renderAdsFlows();
+}
+
+function addAdsFlow(data = {}) {
+  const newFlow = createAdsFlow(data);
+  adsFlows.push(newFlow);
+  selectedAdsFlowId = newFlow.id;
+  renderAdsFlows();
+}
+
+function selectAdsFlow(id) {
+  selectedAdsFlowId = id;
+}
+
+function removeAdsFlow(id) {
+  adsFlows = adsFlows.filter(item => item.id !== id);
+  selectedAdsFlowId = adsFlows[0]?.id || "";
+  renderAdsFlows();
 }
 
 function updateScriptSection(id, field, value) {
@@ -855,6 +1019,46 @@ async function uploadScriptImage(input, sectionId) {
   }
 }
 
+async function uploadFlowImage(input, flowId) {
+  const file = input.files && input.files[0];
+  const status = document.getElementById(`flow-image-upload-status-${flowId}`);
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    if (status) status.innerHTML = '<span style="color:#ff8080">Vui lòng chọn file ảnh.</span>';
+    input.value = "";
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    if (status) status.innerHTML = '<span style="color:#ff8080">Ảnh tối đa 5MB.</span>';
+    input.value = "";
+    return;
+  }
+
+  const form = new FormData();
+  form.append("image", file);
+  if (status) status.innerHTML = '<span style="color:#ffd700">Đang tải ảnh lên...</span>';
+
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/upload-image`, {
+      method: "POST",
+      body: form
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) {
+      throw new Error(data.error || "Không thể tải ảnh lên.");
+    }
+
+    updateAdsFlow(flowId, 'priceImage', data.url);
+    renderAdsFlows();
+  } catch (err) {
+    if (status) status.innerHTML = `<span style="color:#ff8080">Lỗi tải ảnh: ${escHtml(err.message)}</span>`;
+  } finally {
+    input.value = "";
+  }
+}
+
 function loadSample() {
   const script = (() => {
     scriptSections = DEFAULT_SCRIPT_SECTIONS.map(createScriptSection);
@@ -885,6 +1089,53 @@ async function syncScriptToServer(script) {
     } catch (err) {
       console.warn(`⚠️ Could not sync script for page ${page.name}:`, err.message);
     }
+  }
+}
+
+function mergeConnectedPagesWithLocalTokens(serverPages, localPages) {
+  const localById = new Map((localPages || []).map(page => [page.id, page]));
+  const serverIds = new Set();
+  const merged = (serverPages || []).map(page => {
+    serverIds.add(page.id);
+    const localPage = localById.get(page.id);
+    return {
+      id: page.id,
+      name: page.name,
+      token: page.token || localPage?.token || ''
+    };
+  });
+
+  for (const localPage of (localPages || [])) {
+    if (!serverIds.has(localPage.id)) merged.push(localPage);
+  }
+
+  return merged;
+}
+
+async function syncPageTokenToServer(page) {
+  if (!page?.id || !page?.token) return false;
+
+  try {
+    const script = localStorage.getItem('chatbot_script') || CLEAN_DEFAULT_CUSTOMER_SCRIPT;
+    const resp = await fetch(`${SERVER_URL}/api/connect-page`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pageId: page.id,
+        pageName: page.name || "Custom Page",
+        pageToken: page.token,
+        script
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.success) {
+      throw new Error(data.error || 'Không thể đồng bộ lại Page Token.');
+    }
+    console.log(`✅ Synced Page Token back to server for page: ${page.name}`);
+    return true;
+  } catch (err) {
+    console.warn(`⚠️ Could not sync Page Token for page ${page.name}:`, err.message);
+    return false;
   }
 }
 
@@ -1267,7 +1518,9 @@ async function changeActivePage(pageId) {
         document.getElementById('script-status-bar').style.display = 'block';
       }
       
-      document.getElementById('model-select').value = serverPage.model || 'llama-3.3-70b-versatile';
+      document.getElementById('model-select').value = serverPage.model || 'meta-llama/llama-3.1-8b-instruct';
+      const aiModeSelect = document.getElementById('ai-mode-select');
+      if (aiModeSelect) aiModeSelect.value = serverPage.aiMode === 'auto' ? 'auto' : 'observe';
       document.getElementById('temperature').value = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
       document.getElementById('temp-val').textContent = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
       const pageApiKeys = formatGroqApiKeys(serverPage.apiKey || '');
@@ -1275,6 +1528,7 @@ async function changeActivePage(pageId) {
       groqApiKey = pageApiKeys;
       localStorage.setItem('groq_api_key', groqApiKey);
       renderGroqKeyList(groqApiKey);
+      setAdsFlowFormValue(serverPage.adsFlows || JSON.parse(localStorage.getItem(`ads_flow_${pageId}`) || "null") || [DEFAULT_ADS_FLOW]);
     }
   } catch (e) {
     console.warn("Lỗi tải thông tin trang từ backend:", e.message);
@@ -1518,14 +1772,18 @@ async function enterDashboard() {
     const resp = await fetch(`${SERVER_URL}/api/connected-pages`);
     const serverPages = await resp.json();
     if (serverPages && serverPages.length > 0) {
-      // Merge: keep server pages as source of truth, add any local-only pages
-      const serverIds = new Set(serverPages.map(p => p.id));
-      const localOnly = connectedPages.filter(p => !serverIds.has(p.id));
-      connectedPages = [
-        ...serverPages.map(p => ({ id: p.id, name: p.name, token: p.token || '' })),
-        ...localOnly
-      ];
+      const previousLocalPages = [...connectedPages];
+      connectedPages = mergeConnectedPagesWithLocalTokens(serverPages, previousLocalPages);
       localStorage.setItem('connected_pages', JSON.stringify(connectedPages));
+
+      const pagesNeedingTokenSync = connectedPages.filter(page => {
+        const serverPage = serverPages.find(item => item.id === page.id);
+        return page.token && (!serverPage || !serverPage.token);
+      });
+      for (const page of pagesNeedingTokenSync) {
+        await syncPageTokenToServer(page);
+      }
+
       // Keep activePageId valid
       if (!connectedPages.find(p => p.id === activePageId)) {
         activePageId = connectedPages[0].id;
@@ -1680,6 +1938,7 @@ function saveSettings() {
   const shopNameVal = document.getElementById('shop-name-input').value.trim();
   const serverUrlVal = document.getElementById('server-url-input').value.trim();
   const modelVal = document.getElementById('model-select').value;
+  const aiModeVal = document.getElementById('ai-mode-select')?.value || 'observe';
   const tempVal = document.getElementById('temperature').value;
   const apiKeyVal = formatGroqApiKeys(document.getElementById('grok-key').value);
   const status = document.getElementById('settings-status');
@@ -1699,7 +1958,10 @@ function saveSettings() {
         shopName: shopNameVal,
         model: modelVal,
         temperature: parseFloat(tempVal),
-        apiKey: apiKeyVal
+        apiKey: apiKeyVal,
+        aiProvider: 'openrouter',
+        aiMode: aiModeVal,
+        adsFlows: getAdsFlowFormValue()
       })
     })
     .then(r => r.json())
@@ -1722,6 +1984,7 @@ function saveSettings() {
         groqApiKey = apiKeyVal;
         localStorage.setItem('groq_api_key', apiKeyVal);
         renderGroqKeyList(apiKeyVal);
+        localStorage.setItem(`ads_flow_${activePageId}`, JSON.stringify(getAdsFlowFormValue()));
         status.innerHTML = `<span style="color:#6ee396">✅ Đã cập nhật cấu hình cho trang thành công!</span>`;
       } else {
         status.innerHTML = `<span style="color:#ff8080">⚠️ Lỗi: ${data.error}</span>`;
@@ -1735,6 +1998,7 @@ function saveSettings() {
         localStorage.setItem('connected_pages', JSON.stringify(connectedPages));
         updatePageSelectDropdown();
       }
+      localStorage.setItem(`ads_flow_${activePageId}`, JSON.stringify(getAdsFlowFormValue()));
       status.innerHTML = `<span style="color:#6ee396">✅ Đã lưu cài đặt cục bộ offline!</span>`;
     });
   } else {
@@ -1811,7 +2075,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   loadScriptSectionsFromScript(localStorage.getItem('chatbot_script') || '');
-
   // Load connected pages from localStorage
   try {
     const savedPages = JSON.parse(localStorage.getItem('connected_pages') || '[]');

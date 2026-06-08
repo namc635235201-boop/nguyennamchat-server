@@ -29,17 +29,62 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-const PAGES_FILE = path.join(__dirname, "pages.json");
-const ORDERS_FILE = path.join(__dirname, "orders.json");
-const CONFIG_FILE = path.join(__dirname, "config.json");
-const USERS_FILE = path.join(__dirname, "users.json");
-const PLATFORM_USERS_FILE = path.join(__dirname, "platform_users.json");
-const UPLOADS_DIR = path.join(__dirname, "uploads");
+const DATA_DIR = process.env.RAILWAY_ENVIRONMENT ? "/data" : __dirname;
+const LEGACY_DATA_DIR = __dirname;
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const PAGES_FILE = path.join(DATA_DIR, "pages.json");
+const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
+const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
+const PLATFORM_USERS_FILE = path.join(DATA_DIR, "platform_users.json");
+const CONVERSATION_LOCKS_FILE = path.join(DATA_DIR, "conversation_locks.json");
+const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use("/uploads", express.static(UPLOADS_DIR));
 
+function seedPersistentFile(fileName, fallbackValue) {
+  const target = path.join(DATA_DIR, fileName);
+  const legacy = path.join(LEGACY_DATA_DIR, fileName);
+  if (fs.existsSync(target)) return;
+
+  if (DATA_DIR !== LEGACY_DATA_DIR && fs.existsSync(legacy)) {
+    try {
+      fs.copyFileSync(legacy, target);
+      return;
+    } catch (_err) {}
+  }
+
+  fs.writeFileSync(target, JSON.stringify(fallbackValue, null, 2));
+}
+
+function seedUploadsDir() {
+  if (DATA_DIR === LEGACY_DATA_DIR) return;
+  const legacyUploads = path.join(LEGACY_DATA_DIR, "uploads");
+  if (!fs.existsSync(legacyUploads)) return;
+  const files = fs.readdirSync(legacyUploads);
+  for (const file of files) {
+    const from = path.join(legacyUploads, file);
+    const to = path.join(UPLOADS_DIR, file);
+    if (!fs.existsSync(to)) {
+      try {
+        fs.copyFileSync(from, to);
+      } catch (_err) {}
+    }
+  }
+}
+
+seedPersistentFile("pages.json", {});
+seedPersistentFile("orders.json", []);
+seedPersistentFile("config.json", {});
+seedPersistentFile("users.json", {});
+seedPersistentFile("platform_users.json", {});
+seedPersistentFile("conversation_locks.json", {});
+seedUploadsDir();
+
 // Chat History Cache per customer (sender_id)
 const chatHistory = {};
+const adsFlowStates = {};
 const MAX_HISTORY = 6;
 
 // API Key Cooldown Tracker: key → timestamp khi hết cooldown
@@ -84,6 +129,116 @@ function normalizeText(value) {
     .trim();
 }
 
+function normalizeAIMode(value) {
+  const mode = String(value || "observe").toLowerCase().trim();
+  return mode === "auto" ? "auto" : "observe";
+}
+
+function isObserveMode(pageConfig = {}) {
+  return normalizeAIMode(pageConfig.aiMode) === "observe";
+}
+
+const CONVERSATION_LOCK_PATTERNS = [
+  /khong the tiep tuc cuoc tro chuyen nay/,
+  /khong the tiep tuc hoi thoai nay/,
+  /em xin loi vi khong the tiep tuc/,
+  /toi xin loi vi khong the tiep tuc/,
+  /khong the ho tro tiep cuoc tro chuyen nay/
+];
+
+function getConversationLocks() {
+  if (!fs.existsSync(CONVERSATION_LOCKS_FILE)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(CONVERSATION_LOCKS_FILE, "utf-8"));
+  } catch (_err) {
+    return {};
+  }
+}
+
+function saveConversationLocks(locks) {
+  fs.writeFileSync(CONVERSATION_LOCKS_FILE, JSON.stringify(locks, null, 2));
+}
+
+function getConversationLockKey(pageId, senderId) {
+  return `${pageId}:${senderId}`;
+}
+
+function getConversationLock(pageId, senderId) {
+  const locks = getConversationLocks();
+  const lock = locks[getConversationLockKey(pageId, senderId)];
+  return lock && lock.active !== false ? lock : null;
+}
+
+function shouldLockConversationAfterReply(replyText) {
+  const text = normalizeText(replyText);
+  return Boolean(text) && CONVERSATION_LOCK_PATTERNS.some(pattern => pattern.test(text));
+}
+
+function lockConversation(pageId, senderId, userText, botReply, reason = "refusal_reply") {
+  const locks = getConversationLocks();
+  const key = getConversationLockKey(pageId, senderId);
+  const existing = locks[key] || {};
+  locks[key] = {
+    ...existing,
+    active: true,
+    pageId,
+    senderId,
+    reason,
+    lockedAt: existing.lockedAt || new Date().toISOString(),
+    lastLockedAt: new Date().toISOString(),
+    lastUserText: String(userText || ""),
+    lastBotReply: String(botReply || "")
+  };
+  saveConversationLocks(locks);
+  console.warn(`Muted conversation ${key} after refusal-style reply.`);
+}
+
+function touchConversationLock(pageId, senderId, userText) {
+  const locks = getConversationLocks();
+  const key = getConversationLockKey(pageId, senderId);
+  const existing = locks[key];
+  if (!existing || existing.active === false) return;
+  existing.lastIgnoredAt = new Date().toISOString();
+  existing.lastIgnoredUserText = String(userText || "");
+  existing.ignoredCount = (existing.ignoredCount || 0) + 1;
+  saveConversationLocks(locks);
+}
+
+function clearConversationLocksForSender(senderId) {
+  const locks = getConversationLocks();
+  let changed = false;
+  for (const key of Object.keys(locks)) {
+    if (locks[key]?.senderId === senderId || key.endsWith(`:${senderId}`)) {
+      delete locks[key];
+      changed = true;
+    }
+  }
+  if (changed) saveConversationLocks(locks);
+}
+
+function conversationHistoryHasLockReply(pageId, senderId) {
+  const users = getUsers();
+  const user = users[senderId];
+  if (!user || user.pageId !== pageId || !Array.isArray(user.conversations)) return false;
+  return user.conversations.some(item => shouldLockConversationAfterReply(item.bot));
+}
+
+function ensureConversationLocked(pageId, senderId, userText) {
+  const existing = getConversationLock(pageId, senderId);
+  if (existing) {
+    touchConversationLock(pageId, senderId, userText);
+    return existing;
+  }
+
+  if (conversationHistoryHasLockReply(pageId, senderId)) {
+    lockConversation(pageId, senderId, userText, "", "historical_refusal_reply");
+    touchConversationLock(pageId, senderId, userText);
+    return getConversationLock(pageId, senderId);
+  }
+
+  return null;
+}
+
 function extractIndustry(userText) {
   const raw = String(userText || "").toLowerCase();
   const normalized = normalizeText(userText);
@@ -95,6 +250,72 @@ function extractIndustry(userText) {
     .replace(/\?+$/g, "")
     .trim();
   if (cleaned.length >= 3 && cleaned.length <= 40 && !/\d/.test(cleaned)) return cleaned;
+  return "";
+}
+
+function messageAsksDailyBudget(userText) {
+  const text = normalizeText(userText);
+  return /(gia ngay|goi ngay|chay theo ngay|200k\/ngay|200k ngay|200000\/ngay|200000 ngay|toi thieu 7 ngay|7 ngay)/.test(text);
+}
+
+function messageAsksPrice(userText) {
+  const text = normalizeText(userText);
+  return /(gia sao|bao gia|gia ca|bao nhieu|chi phi|ngan sach|muc gia|gia chay|gia qc|bao gia qc|gia ads|chay qc gia|gia chay qc)/.test(text);
+}
+
+function messageShowsBuyingIntent(userText) {
+  const text = normalizeText(userText);
+  return /(ok|duoc|quan tam|muon lam|muon chay|muon trien khai|tu van them|ib tu van|chot|lam di|trien khai di)/.test(text);
+}
+
+function extractPackageNumber(userText) {
+  const text = normalizeText(userText);
+  const match = text.match(/\b(goi)\s*([1-9]\d*)\b/);
+  return match ? match[2] : "";
+}
+
+function userAlreadySharedAdsExperience(history) {
+  const joined = (history || [])
+    .filter(item => item.role === "user")
+    .map(item => normalizeText(item.content))
+    .join(" ");
+  return /(chay roi|da chay|tung chay|roi|lan dau|chua chay|chua tung chay|chua bao gio chay)/.test(joined);
+}
+
+function getConversationSnapshot(history) {
+  const userMessages = (history || []).filter(item => item.role === "user").map(item => item.content);
+  const allUserText = userMessages.join(" ");
+  const latestIndustry = [...userMessages].reverse().map(extractIndustry).find(Boolean) || "";
+  const hasExperience = userAlreadySharedAdsExperience(history);
+  const hasPriceQuestion = userMessages.some(message => messageAsksPrice(message));
+  const hasDailyQuestion = userMessages.some(message => messageAsksDailyBudget(message));
+  const hasBuyingIntent = userMessages.some(message => messageShowsBuyingIntent(message));
+  return {
+    latestIndustry,
+    hasExperience,
+    hasPriceQuestion,
+    hasDailyQuestion,
+    hasBuyingIntent,
+    allUserText: normalizeText(allUserText)
+  };
+}
+
+function getAdsFlowState(pageId, senderId) {
+  const key = `${pageId}:${senderId}`;
+  if (!adsFlowStates[key]) {
+    adsFlowStates[key] = {
+      industry: "",
+      experience: "",
+      priceSent: false
+    };
+  }
+  return adsFlowStates[key];
+}
+
+function extractAdsExperience(userText) {
+  const text = normalizeText(userText);
+  if (/(lan dau|chua chay|chua tung chay|chua bao gio chay)/.test(text)) return "new";
+  if (/(chay roi|da chay|tung chay|co chay roi|roi)/.test(text)) return "experienced";
   return "";
 }
 
@@ -148,6 +369,165 @@ function extractScriptValue(script, labels) {
   return "";
 }
 
+function hasPackageDetailInScript(script, packageNumber) {
+  if (!packageNumber) return false;
+  const normalizedScript = normalizeText(script);
+  return normalizedScript.includes(`goi ${packageNumber}:`) || normalizedScript.includes(`goi ${packageNumber} -`) || normalizedScript.includes(`goi ${packageNumber} `);
+}
+
+function hasFlowText(value) {
+  return String(value || "").trim().length > 0;
+}
+
+function joinFlowText(...parts) {
+  return parts.map(part => String(part || "").trim()).filter(Boolean).join(" ").trim();
+}
+
+function getAdsFlowsFromPageConfig(pageConfig = {}) {
+  if (Array.isArray(pageConfig.adsFlows) && pageConfig.adsFlows.length) {
+    return pageConfig.adsFlows;
+  }
+  return [];
+}
+
+function pickAdsFlow(userText, pageConfig = {}) {
+  const text = normalizeText(userText);
+  const flows = getAdsFlowsFromPageConfig(pageConfig);
+  if (!flows.length) return null;
+
+  const matched = flows.find(flow => {
+    const keywords = String(flow.keywords || "")
+      .split(",")
+      .map(item => normalizeText(item))
+      .filter(Boolean);
+    return keywords.some(keyword => text.includes(keyword));
+  });
+
+  return matched || flows[0];
+}
+
+function buildAdsFlowReply(userText, script, pageConfig, pageId, senderId) {
+  const profile = getTenantProfile(script, pageConfig);
+  if (!profile.hasAdsPricing) return null;
+
+  const state = getAdsFlowState(pageId, senderId);
+  const selectedFlow = pickAdsFlow(userText, pageConfig);
+  const flow = {
+    greeting: "Dạ em chào anh/chị ạ, anh/chị đang cần bên em hỗ trợ gì ạ?",
+    keywords: "chạy quảng cáo, chạy ads, quảng cáo facebook, báo giá quảng cáo, giá chạy qc",
+    askIndustry: "Dạ anh/chị đang muốn chạy quảng cáo cho ngành nghề, sản phẩm hoặc dịch vụ gì ạ?",
+    askExperience: "Dạ trước giờ anh/chị đã từng chạy quảng cáo Facebook chưa ạ, hay đây là lần đầu mình chạy?",
+    sendPriceText: "Dạ em gửi anh/chị bảng giá tham khảo bên em ạ, anh/chị xem giúp em nhé.",
+    dailyPriceText: "Dạ bên em nhận chạy tối thiểu 200.000đ/ngày và cần chạy ít nhất 7 ngày ạ.",
+    afterPriceFollowup: "Dạ anh/chị đang muốn chạy cho ngành nghề, sản phẩm hoặc dịch vụ gì ạ?",
+    zaloSoft: `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em tư vấn kỹ hơn và lên phương án phù hợp cho mình ạ.`,
+    zaloPackage: `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em gửi chi tiết đúng gói này cho mình ạ.`,
+    fallback: `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em tư vấn kỹ hơn cho mình ạ.`,
+    sendPriceFirst: true,
+    zaloOnlyAfterOk: true,
+    ...(selectedFlow || pageConfig.adsFlow || {})
+  };
+  const text = normalizeText(userText);
+  const industry = extractIndustry(userText);
+  const experience = extractAdsExperience(userText);
+  const packageNumber = extractPackageNumber(userText);
+  const asksGenericPackage = /\b(goi|gói)\b/.test(text);
+  const images = (flow.priceImage ? [flow.priceImage] : getScriptImages(script)).slice(0, 1);
+  const dailyText = profile.dailyLine ? cleanPhrase(stripScriptLabel(profile.dailyLine)) : "tối thiểu 200.000đ/ngày và cần chạy ít nhất 7 ngày";
+
+  if (industry && !state.industry) state.industry = industry;
+  if (experience && !state.experience) state.experience = experience;
+
+  if (/^(alo|hi|hello|chao|xin chao|shop oi|ban oi|ad oi|admin oi)$/.test(text) && !state.industry && !state.priceSent) {
+    return { text: hasFlowText(flow.greeting) ? flow.greeting : flow.fallback, images: [] };
+  }
+
+  if (messageAsksDailyBudget(userText)) {
+    return {
+      text: joinFlowText(flow.dailyPriceText || `Dạ bên em nhận chạy ${dailyText} ạ.`, flow.afterPriceFollowup) || flow.fallback,
+      images: []
+    };
+  }
+
+  if (asksGenericPackage && !packageNumber) {
+    return {
+      text: flow.fallback,
+      images: []
+    };
+  }
+
+  if (packageNumber && !hasPackageDetailInScript(script, packageNumber)) {
+    return {
+      text: hasFlowText(flow.zaloPackage) ? flow.zaloPackage.replace("gói này", `gói ${packageNumber}`) : flow.fallback,
+      images: []
+    };
+  }
+
+  if (flow.sendPriceFirst && messageAsksPrice(userText) && !state.priceSent) {
+    state.priceSent = true;
+    if (state.industry && !state.experience) {
+      return {
+        text: joinFlowText(flow.sendPriceText, flow.askExperience) || flow.fallback,
+        images
+      };
+    }
+    if (state.industry && state.experience) {
+      return {
+        text: hasFlowText(flow.sendPriceText) ? flow.sendPriceText : flow.fallback,
+        images
+      };
+    }
+    return {
+      text: joinFlowText(flow.sendPriceText, flow.afterPriceFollowup) || flow.fallback,
+      images
+    };
+  }
+
+  if (!state.industry) {
+    if (!hasFlowText(flow.askIndustry)) {
+      state.industry = "__skipped__";
+    } else {
+      return {
+        text: flow.askIndustry,
+        images: []
+      };
+    }
+  }
+
+  if (!state.experience) {
+    if (!hasFlowText(flow.askExperience)) {
+      state.experience = "__skipped__";
+    } else {
+      return {
+        text: hasFlowText(flow.askIndustry) && state.industry && state.industry !== "__skipped__"
+          ? `Dạ anh/chị đang kinh doanh ${state.industry} ạ. ${flow.askExperience}`
+          : flow.askExperience,
+        images: []
+      };
+    }
+  }
+
+  if (!state.priceSent) {
+    state.priceSent = true;
+    return {
+      text: hasFlowText(flow.sendPriceText) ? flow.sendPriceText : flow.fallback,
+      images
+    };
+  }
+
+  if (flow.zaloOnlyAfterOk && messageShowsBuyingIntent(userText)) {
+    return {
+      text: hasFlowText(flow.zaloSoft) ? flow.zaloSoft : flow.fallback,
+      images: []
+    };
+  }
+
+  return {
+    text: hasFlowText(flow.fallback) ? flow.fallback : `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em tư vấn kỹ hơn cho mình ạ.`,
+    images: []
+  };
+}
+
 function getTenantProfile(script, pageConfig = {}) {
   const source = String(script || "");
   const normalized = normalizeText(source);
@@ -178,70 +558,6 @@ function getTenantProfile(script, pageConfig = {}) {
     hasAdsPricing,
     ownerReply: findBotOwnerReply(source)
   };
-}
-
-function buildContactClose(profile) {
-  return profile.contact
-    ? `Anh/chị nhắn Zalo/Hotline ${profile.contact} để em gọi trao đổi kỹ hơn nhé 📞`
-    : "Anh/chị để lại số điện thoại để bên em gọi trao đổi kỹ hơn nhé 📞";
-}
-
-function buildTenantPriceReply(profile) {
-  if (!profile.hasAdsPricing) return "";
-  const plans = [
-    formatPlan("gói ngày", profile.dailyLine),
-    formatPlan("gói test", profile.testLine),
-    formatPlan("gói tháng ổn định", profile.monthlyLine)
-  ].filter(Boolean);
-  const fees = [
-    formatPlan("ngân sách từ 5 triệu trở lên", profile.feeFiveLine),
-    formatPlan("ngân sách dưới 5 triệu", profile.feeTenLine)
-  ].filter(Boolean);
-  const planText = plans.length
-    ? plans.join(", ")
-    : "gói ngày 300k/ngày tối thiểu 7 ngày, gói test 3-5 triệu/tháng và gói tháng ổn định 5-20 triệu/tháng";
-  const feeText = fees.length
-    ? ` Phí dịch vụ: ${fees.join(", ")}.`
-    : "";
-  return `Dạ bên em có ${planText} ạ.${feeText} ${buildContactClose(profile)}`;
-}
-
-function buildTenantDailyReply(profile) {
-  if (!profile.hasAdsPricing) return "";
-  const dailyText = profile.dailyLine ? cleanPhrase(stripScriptLabel(profile.dailyLine)) : "gói ngày 300k/ngày, chạy tối thiểu 7 ngày";
-  return `Dạ bên em có gói ngày ${dailyText} ạ. Gói này phù hợp để test phản hồi ban đầu trước khi lên ngân sách tháng. ${buildContactClose(profile)}`;
-}
-
-function buildTenantLowBudgetReply(profile) {
-  if (!profile.hasAdsPricing) return "";
-  const dailyText = profile.dailyLine ? cleanPhrase(stripScriptLabel(profile.dailyLine)) : "bắt đầu từ 300k/ngày và chạy tối thiểu 7 ngày";
-  return `Dạ hiện gói ngày bên em ${dailyText} ạ. Ngân sách 100k/ngày chưa phù hợp để tối ưu nghiêm túc. Nếu mình muốn test bài bản, ${buildContactClose(profile)}`;
-}
-
-function buildTenantFeeReply(profile) {
-  const fees = [
-    formatPlan("ngân sách từ 5 triệu trở lên", profile.feeFiveLine),
-    formatPlan("ngân sách dưới 5 triệu", profile.feeTenLine)
-  ].filter(Boolean);
-  if (!fees.length) return "";
-  return `Dạ phí dịch vụ bên em là ${fees.join(", ")} ạ. Phí này thu sau khi quảng cáo bắt đầu hoạt động.`;
-}
-
-function buildTenantIndustryReply(industry, profile) {
-  if (!profile.hasAdsPricing) return "";
-  const price = buildTenantPriceReply(profile);
-  const name = industry || "ngành này";
-  return price
-    ? `Dạ ngành ${name} bên em tư vấn chạy được ạ. ${price}`
-    : "";
-}
-
-function buildTenantFallbackReply(script, pageConfig = {}) {
-  const profile = getTenantProfile(script, pageConfig);
-  if (profile.hasAdsPricing) return buildTenantPriceReply(profile);
-  return profile.contact
-    ? `Dạ em đã nhận thông tin rồi ạ. Anh/chị nhắn Zalo/Hotline ${profile.contact} để bên em hỗ trợ nhanh hơn nhé.`
-    : "Dạ em đã nhận thông tin rồi ạ. Anh/chị để lại số điện thoại để bên em hỗ trợ nhanh hơn nhé.";
 }
 
 function getQuickReply(userText, script, pageConfig = {}) {
@@ -420,6 +736,7 @@ function getPages() {
 function savePage(pageId, pageName, pageToken, script) {
   const pages = getPages();
   const config = getConfig();
+  const existingFlows = Array.isArray(pages[pageId]?.adsFlows) ? pages[pageId].adsFlows : [];
   pages[pageId] = {
     id: pageId,
     name: pageName,
@@ -429,6 +746,8 @@ function savePage(pageId, pageName, pageToken, script) {
     aiProvider: pages[pageId]?.aiProvider || config.aiProvider || "openrouter",
     temperature: pages[pageId]?.temperature !== undefined ? pages[pageId].temperature : 0.7,
     apiKey: pages[pageId]?.apiKey || "",
+    adsFlows: existingFlows,
+    aiMode: normalizeAIMode(pages[pageId]?.aiMode),
     updatedAt: new Date().toISOString()
   };
   fs.writeFileSync(PAGES_FILE, JSON.stringify(pages, null, 2));
@@ -617,8 +936,13 @@ app.post("/api/reset-all", (req, res) => {
     if (fs.existsSync(ORDERS_FILE)) {
       fs.writeFileSync(ORDERS_FILE, JSON.stringify([], null, 2));
     }
+
+    // 3. Wipe conversation locks so a full reset starts clean.
+    if (fs.existsSync(CONVERSATION_LOCKS_FILE)) {
+      fs.writeFileSync(CONVERSATION_LOCKS_FILE, JSON.stringify({}, null, 2));
+    }
     
-    // 3. Reset config.json to empty state (keep only default placeholders)
+    // 4. Reset config.json to empty state (keep only default placeholders)
     const defaultConfig = {
       fbAppId: "759513787182248", // Keep their real App ID so they don't lose it
       fbAppSecret: "",
@@ -629,7 +953,7 @@ app.post("/api/reset-all", (req, res) => {
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(defaultConfig, null, 2));
     
-    // 4. Update in-memory environment variables (fallback to original system variables if cleared)
+    // 5. Update in-memory environment variables (fallback to original system variables if cleared)
     process.env.FB_APP_ID = defaultConfig.fbAppId || ORIGINAL_ENV.FB_APP_ID;
     process.env.FB_APP_SECRET = defaultConfig.fbAppSecret || ORIGINAL_ENV.FB_APP_SECRET;
     process.env.VERIFY_TOKEN = defaultConfig.verifyToken || ORIGINAL_ENV.VERIFY_TOKEN;
@@ -645,21 +969,25 @@ app.post("/api/reset-all", (req, res) => {
 
 // API to update settings for a Fanpage
 app.post("/api/update-settings", (req, res) => {
-  const { pageId, shopName, model, temperature, apiKey, aiProvider } = req.body;
+  const { pageId, shopName, model, temperature, apiKey, aiProvider, aiMode, adsFlows } = req.body;
   if (!pageId) {
     return res.status(400).json({ error: "Missing pageId parameter" });
   }
 
   const pages = getPages();
   if (!pages[pageId]) {
-    return res.status(404).json({ error: "Page not found" });
+    // Create a minimal page config so settings can be saved before reconnecting the page.
+    savePage(pageId, shopName || "Custom Page", "", "");
+    pages[pageId] = getPages()[pageId];
   }
 
   if (shopName) pages[pageId].name = shopName;
   if (model) pages[pageId].model = model;
   if (aiProvider) pages[pageId].aiProvider = aiProvider;
+  if (aiMode !== undefined) pages[pageId].aiMode = normalizeAIMode(aiMode);
   if (temperature !== undefined) pages[pageId].temperature = parseFloat(temperature);
   if (apiKey !== undefined) pages[pageId].apiKey = apiKey;
+  if (Array.isArray(adsFlows)) pages[pageId].adsFlows = adsFlows;
   pages[pageId].updatedAt = new Date().toISOString();
 
   fs.writeFileSync(PAGES_FILE, JSON.stringify(pages, null, 2));
@@ -812,6 +1140,7 @@ app.delete("/api/users/:senderId", (req, res) => {
     delete users[req.params.senderId];
     fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
   }
+  clearConversationLocksForSender(req.params.senderId);
   res.json({ success: true });
 });
 
@@ -823,8 +1152,22 @@ app.post("/api/test-chat", async (req, res) => {
   }
   const mockSender = senderId || "dashboard-test";
   try {
+    const pages = getPages();
+    const pageConfig = pages[pageId] || {};
+    if (isObserveMode(pageConfig)) {
+      return res.json({ success: true, reply: "", images: [], observed: true });
+    }
+
+    if (ensureConversationLocked(pageId, mockSender, text)) {
+      return res.json({ success: true, reply: "", images: [], muted: true });
+    }
+
     const reply = await generateBotResponse(text, pageId, mockSender);
-    res.json({ success: true, reply: getReplyText(reply), images: getReplyImages(reply) });
+    const replyText = getReplyText(reply);
+    if (shouldLockConversationAfterReply(replyText)) {
+      lockConversation(pageId, mockSender, text, replyText);
+    }
+    res.json({ success: true, reply: replyText, images: getReplyImages(reply) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -897,6 +1240,16 @@ app.post("/webhook", async (req, res) => {
       const senderId = event.sender?.id;
       if (!senderId) continue;
 
+      if (event.message?.is_echo) {
+        const customerId = event.recipient?.id;
+        if (customerId && customerId !== pageId) {
+          const echoText = event.message.text || "[PAGE_ECHO]";
+          lockConversation(pageId, customerId, echoText, "", "page_echo_human_reply");
+          console.log(`Manual Page reply detected. Muted customer ${customerId} on Page ${pageId}.`);
+        }
+        continue;
+      }
+
       if (event.message?.text) {
         const text = event.message.text;
         console.log(`📩 Khách [${senderId}] -> Page [${pageId}]: ${text}`);
@@ -930,20 +1283,6 @@ async function generateBotResponse(userText, pageId, senderId) {
   let model = pageConfig.model || config.groqModel || "meta-llama/llama-3.1-8b-instruct";
   let temperature = pageConfig.temperature !== undefined ? parseFloat(pageConfig.temperature) : 0.3;
 
-  let apiKeys = [];
-  if (pageConfig.apiKey) {
-    apiKeys.push(...parseProviderApiKeys(pageConfig.apiKey, aiProvider));
-  }
-  if (config.groqApiKey) {
-    apiKeys.push(...parseProviderApiKeys(config.groqApiKey, aiProvider));
-  }
-  apiKeys = [...new Set(apiKeys)];
-
-  // Luôn gọi AI cho mọi tin nhắn — không dùng quick reply cứng
-  if (apiKeys.length === 0) {
-    throw new Error(`Chua cau hinh ${getProviderLabel(aiProvider)} API Key cho Page ID nay hoac he thong.`);
-  }
-
   // Initialize conversation history
   if (!chatHistory[senderId]) {
     chatHistory[senderId] = [];
@@ -956,6 +1295,29 @@ async function generateBotResponse(userText, pageId, senderId) {
 
   if (chatHistory[senderId].length > MAX_HISTORY) {
     chatHistory[senderId] = chatHistory[senderId].slice(-MAX_HISTORY);
+  }
+
+  const hardFlowReply = buildAdsFlowReply(userText, script, pageConfig, pageId, senderId);
+  if (hardFlowReply) {
+    chatHistory[senderId].push({
+      role: "assistant",
+      content: hardFlowReply.text
+    });
+    return hardFlowReply;
+  }
+
+  let apiKeys = [];
+  if (pageConfig.apiKey) {
+    apiKeys.push(...parseProviderApiKeys(pageConfig.apiKey, aiProvider));
+  }
+  if (config.groqApiKey) {
+    apiKeys.push(...parseProviderApiKeys(config.groqApiKey, aiProvider));
+  }
+  apiKeys = [...new Set(apiKeys)];
+
+  // Luôn gọi AI cho mọi tin nhắn ngoài nhánh flow cứng
+  if (apiKeys.length === 0) {
+    throw new Error(`Chua cau hinh ${getProviderLabel(aiProvider)} API Key cho Page ID nay hoac he thong.`);
   }
 
   // Gọi AI — retry với tất cả key, nếu thất bại thì đợi 2s rồi thử lại 1 lần nữa
@@ -1009,6 +1371,20 @@ async function handleMessage(senderId, userText, pageId) {
       return;
     }
 
+    if (isObserveMode(pageConfig)) {
+      const pageName = pageConfig.name || pageId;
+      trackUser(senderId, pageId, pageName, userText, "[OBSERVE_ONLY] AI observed but did not reply.");
+      console.log(`Observe mode: logged message from ${senderId} on Page ${pageId}; no AI reply sent.`);
+      return;
+    }
+
+    if (ensureConversationLocked(pageId, senderId, userText)) {
+      const pageName = pageConfig.name || pageId;
+      trackUser(senderId, pageId, pageName, userText, "[BOT MUTED] Conversation locked after refusal reply.");
+      console.log(`🔇 Bỏ qua tin nhắn từ khách ${senderId} vì cuộc trò chuyện đã bị khóa.`);
+      return;
+    }
+
     // Typing indicators must not block the actual reply flow.
     sendTyping(senderId, true, token).catch(err => {
       console.warn("⚠️ Không gửi được typing_on:", err.response?.data || err.message);
@@ -1025,21 +1401,28 @@ async function handleMessage(senderId, userText, pageId) {
     // Send messages back to user
     const replyText = getReplyText(reply);
     const replyImages = getReplyImages(reply);
+    const parts = splitMessage(replyText, 2000);
+    for (const part of parts) {
+      await sendTextMessage(senderId, part, token);
+      console.log(`💬 Đã gửi tin nhắn chữ cho khách ${senderId}`);
+      if (parts.length > 1) await sleep(500);
+    }
+
     if (replyImages.length) {
-      await sendImageTemplateMessage(senderId, replyText, replyImages, token);
-      console.log(`🖼️ Đã gửi ${replyImages.length} template ảnh cho khách ${senderId}`);
-    } else {
-      const parts = splitMessage(replyText, 2000);
-      for (const part of parts) {
-        await sendTextMessage(senderId, part, token);
-        console.log(`💬 Đã gửi tin nhắn chữ cho khách ${senderId}`);
-        if (parts.length > 1) await sleep(500);
+      for (const imageUrl of replyImages) {
+        await sendImageMessage(senderId, imageUrl, token);
+        console.log(`🖼️ Đã gửi ảnh cho khách ${senderId}: ${imageUrl}`);
+        await sleep(400);
       }
     }
 
     // Auto-detect and save order
     if (isOrderConfirmed(replyText)) {
       saveOrder(senderId, userText, replyText, pageId);
+    }
+
+    if (shouldLockConversationAfterReply(replyText)) {
+      lockConversation(pageId, senderId, userText, replyText);
     }
 
     // Track user conversation
@@ -1205,35 +1588,6 @@ async function sendImageMessage(recipientId, imageUrl, token) {
   );
 }
 
-async function sendImageTemplateMessage(recipientId, text, imageUrls, token) {
-  const summary = buildTemplateSummary(text);
-  const elements = imageUrls.slice(0, 3).map((imageUrl, index) => ({
-    title: index === 0 ? "Bảng giá / thông tin gói" : `Thông tin gói ${index + 1}`,
-    image_url: imageUrl,
-    subtitle: summary
-  }));
-
-  await axios.post(
-    `https://graph.facebook.com/v19.0/me/messages`,
-    {
-      recipient: { id: recipientId },
-      message: {
-        attachment: {
-          type: "template",
-          payload: {
-            template_type: "generic",
-            elements
-          }
-        }
-      },
-      messaging_type: "RESPONSE"
-    },
-    {
-      params: { access_token: token }
-    }
-  );
-}
-
 // Send Typing Indicator
 async function sendTyping(recipientId, isOn, token) {
   await axios.post(
@@ -1273,12 +1627,23 @@ function normalizeAIProvider(value) {
   return String(value || "openrouter").toLowerCase() === "groq" ? "groq" : "openrouter";
 }
 
+function getScriptImages(script) {
+  return parseBotReplyMedia(String(script || "")).images;
+}
+
 function getProviderLabel(value) {
   return normalizeAIProvider(value) === "openrouter" ? "OpenRouter" : "Groq";
 }
 
 function buildSystemPromptWithImageRules(script) {
   return `${script}
+
+SCRIPT PRIORITY RULES:
+- Follow the script very closely. At least 80% of the reply behavior must come from the script, not from improvisation.
+- Do not jump ahead in the flow. If the script says ask industry first, then ask industry first.
+- Do not answer with "giá ngày", "200.000đ/ngày", "tối thiểu 7 ngày" unless the customer explicitly asks about daily pricing, daily budget, or running by day.
+- If the customer only asks a general price question such as "giá sao", "báo giá", or "bao nhiêu", and the script requires collecting more information first, ask the required follow-up question instead of quoting detailed pricing.
+- After sending a price image, do not invite the customer to Zalo immediately unless the customer has shown clear interest such as ok, muốn làm, muốn triển khai, chốt, tư vấn thêm.
 
 IMAGE REPLY RULES:
 - You control when images are sent. The app sends an image only when your reply includes an image marker.

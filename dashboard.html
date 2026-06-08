@@ -105,20 +105,29 @@
     <!-- TAB: Settings -->
     <div class="tab-content" id="content-settings">
       <div class="settings-group">
-        <label class="settings-label">🔑 Groq API Key (Miễn phí)</label>
+        <label class="settings-label">🔑 OpenRouter API Key</label>
         <div class="key-row">
-          <textarea id="grok-key" rows="3" placeholder="gsk_1...&#10;gsk_2..."></textarea>
+          <textarea id="grok-key" rows="3" placeholder="sk-or-v1-...&#10;sk-or-v1-..."></textarea>
           <button onclick="saveKey()">Lưu</button>
         </div>
         <div id="groq-key-list" class="key-list"></div>
         <span style="font-size:11px;color:#94a3b8;margin-top:4px;display:block">💡 Mỗi dòng một key, hoặc cách nhau bằng dấu phẩy. Khi key bị giới hạn, bot tự đổi sang key tiếp theo.</span>
-        <a href="https://console.groq.com" target="_blank" class="get-key-link" style="margin-top:4px;display:inline-block">→ Lấy API Key miễn phí tại console.groq.com</a>
+        <a href="https://openrouter.ai/keys" target="_blank" class="get-key-link" style="margin-top:4px;display:inline-block">→ Lấy API Key tại openrouter.ai/keys</a>
         <span id="key-status"></span>
       </div>
 
       <div class="settings-group">
         <label class="settings-label">🏪 Tên shop hiển thị</label>
         <input type="text" id="shop-name-input" class="settings-input" value="Fanpage cua ban" placeholder="Tên shop của bạn" />
+      </div>
+
+      <div class="settings-group">
+        <label class="settings-label">🤖 Chế độ trả lời</label>
+        <select id="ai-mode-select" class="settings-input">
+          <option value="observe">Chỉ quan sát, không tự trả lời</option>
+          <option value="auto">Tự động trả lời khách</option>
+        </select>
+        <span style="font-size:11px;color:#94a3b8">Chế độ quan sát chỉ ghi nhận tin nhắn, không gửi bất kỳ phản hồi nào ra Messenger.</span>
       </div>
 
       <div class="settings-group">
@@ -130,8 +139,9 @@
       <div class="settings-group">
         <label class="settings-label">🤖 Model AI</label>
         <select id="model-select" class="settings-input">
-          <option value="llama-3.3-70b-versatile">Llama 3.3 70B ⚡ (Nhanh, thông minh)</option>
-          <option value="llama-3.1-8b-instant">Llama 3.1 8B 🚀 (Siêu nhanh)</option>
+          <option value="meta-llama/llama-3.1-8b-instruct">Llama 3.1 8B qua OpenRouter 🚀</option>
+          <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B qua OpenRouter ⚡</option>
+          <option value="openai/gpt-4o-mini">GPT-4o mini qua OpenRouter</option>
         </select>
       </div>
 

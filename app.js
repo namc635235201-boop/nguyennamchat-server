@@ -341,7 +341,7 @@ function setGroqKeyCooldown(key) {
 
 async function callGroqAI(userMessage) {
   let keysToUse = getConfiguredGroqKeys();
-  let modelToUse = "llama-3.3-70b-versatile";
+  let modelToUse = "meta-llama/llama-3.1-8b-instruct";
   let tempToUse = 0.7;
   let systemPrompt = localStorage.getItem('chatbot_script') || '';
 
@@ -373,11 +373,13 @@ Nếu khách muốn đặt hàng, hãy hướng dẫn họ gõ "đặt hàng".`;
     if (isGroqKeyCoolingDown(keyToUse) && activeKeys.length) continue;
 
     try {
-      const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${keyToUse}`
+        "Authorization": `Bearer ${keyToUse}`,
+        "HTTP-Referer": window.location.origin,
+        "X-Title": "NGUYENNAMADS Chatbot"
       },
       body: JSON.stringify({
         model: modelToUse,
@@ -395,7 +397,7 @@ Nếu khách muốn đặt hàng, hãy hướng dẫn họ gõ "đặt hàng".`;
 
       if (!resp.ok) {
         const errorText = await resp.text().catch(() => "");
-        lastError = new Error(`Groq API ${resp.status}: ${errorText}`);
+        lastError = new Error(`OpenRouter API ${resp.status}: ${errorText}`);
         if (resp.status === 429) setGroqKeyCooldown(keyToUse);
         continue;
       }
@@ -446,6 +448,10 @@ async function processMessage(text) {
     
     const data = await resp.json();
     removeTyping();
+
+    if (data.muted) {
+      return;
+    }
     
     if (data.success && data.reply) {
       appendBotBubble(escHtml(data.reply).replace(/\n/g, "<br>"));
@@ -582,7 +588,7 @@ function saveKey() {
     fetch(`${SERVER_URL}/api/update-settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pageId: activePageId, apiKey: key })
+        body: JSON.stringify({ pageId: activePageId, apiKey: key, aiProvider: 'openrouter' })
     })
     .then(r => r.json())
     .then(data => {
@@ -599,7 +605,7 @@ function saveKey() {
       status.style.color = "#ffd700";
     });
   } else {
-    status.textContent = "✅ Đã lưu! Bot sẽ dùng Groq AI cho câu hỏi ngoài kịch bản.";
+    status.textContent = "✅ Đã lưu! Bot sẽ dùng OpenRouter AI cho câu hỏi ngoài kịch bản.";
     status.style.color = "#6ee396";
   }
 }
@@ -1267,7 +1273,9 @@ async function changeActivePage(pageId) {
         document.getElementById('script-status-bar').style.display = 'block';
       }
       
-      document.getElementById('model-select').value = serverPage.model || 'llama-3.3-70b-versatile';
+      document.getElementById('model-select').value = serverPage.model || 'meta-llama/llama-3.1-8b-instruct';
+      const aiModeSelect = document.getElementById('ai-mode-select');
+      if (aiModeSelect) aiModeSelect.value = serverPage.aiMode === 'auto' ? 'auto' : 'observe';
       document.getElementById('temperature').value = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
       document.getElementById('temp-val').textContent = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
       const pageApiKeys = formatGroqApiKeys(serverPage.apiKey || '');
@@ -1680,6 +1688,7 @@ function saveSettings() {
   const shopNameVal = document.getElementById('shop-name-input').value.trim();
   const serverUrlVal = document.getElementById('server-url-input').value.trim();
   const modelVal = document.getElementById('model-select').value;
+  const aiModeVal = document.getElementById('ai-mode-select')?.value || 'observe';
   const tempVal = document.getElementById('temperature').value;
   const apiKeyVal = formatGroqApiKeys(document.getElementById('grok-key').value);
   const status = document.getElementById('settings-status');
@@ -1699,7 +1708,9 @@ function saveSettings() {
         shopName: shopNameVal,
         model: modelVal,
         temperature: parseFloat(tempVal),
-        apiKey: apiKeyVal
+        apiKey: apiKeyVal,
+        aiProvider: 'openrouter',
+        aiMode: aiModeVal
       })
     })
     .then(r => r.json())
