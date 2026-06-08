@@ -1520,7 +1520,9 @@ async function changeActivePage(pageId) {
       
       document.getElementById('model-select').value = serverPage.model || 'meta-llama/llama-3.1-8b-instruct';
       const aiModeSelect = document.getElementById('ai-mode-select');
-      if (aiModeSelect) aiModeSelect.value = serverPage.aiMode === 'auto' ? 'auto' : 'observe';
+      if (aiModeSelect) {
+        aiModeSelect.value = ['auto', 'observe', 'flow'].includes(serverPage.aiMode) ? serverPage.aiMode : 'flow';
+      }
       document.getElementById('temperature').value = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
       document.getElementById('temp-val').textContent = serverPage.temperature !== undefined ? serverPage.temperature : 0.7;
       const pageApiKeys = formatGroqApiKeys(serverPage.apiKey || '');
@@ -1938,7 +1940,7 @@ function saveSettings() {
   const shopNameVal = document.getElementById('shop-name-input').value.trim();
   const serverUrlVal = document.getElementById('server-url-input').value.trim();
   const modelVal = document.getElementById('model-select').value;
-  const aiModeVal = document.getElementById('ai-mode-select')?.value || 'observe';
+  const aiModeVal = document.getElementById('ai-mode-select')?.value || 'flow';
   const tempVal = document.getElementById('temperature').value;
   const apiKeyVal = formatGroqApiKeys(document.getElementById('grok-key').value);
   const status = document.getElementById('settings-status');

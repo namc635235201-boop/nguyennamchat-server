@@ -130,12 +130,18 @@ function normalizeText(value) {
 }
 
 function normalizeAIMode(value) {
-  const mode = String(value || "observe").toLowerCase().trim();
-  return mode === "auto" ? "auto" : "observe";
+  const mode = String(value || "flow").toLowerCase().trim();
+  if (mode === "auto") return "auto";
+  if (mode === "observe") return "observe";
+  return "flow";
 }
 
 function isObserveMode(pageConfig = {}) {
   return normalizeAIMode(pageConfig.aiMode) === "observe";
+}
+
+function isFlowOnlyMode(pageConfig = {}) {
+  return normalizeAIMode(pageConfig.aiMode) === "flow";
 }
 
 const CONVERSATION_LOCK_PATTERNS = [
@@ -1162,6 +1168,17 @@ app.post("/api/test-chat", async (req, res) => {
       return res.json({ success: true, reply: "", images: [], muted: true });
     }
 
+    if (isFlowOnlyMode(pageConfig)) {
+      const reply = await generateFlowOnlyResponse(text, pageId, mockSender);
+      return res.json({
+        success: true,
+        reply: getReplyText(reply),
+        images: getReplyImages(reply),
+        flowOnly: true,
+        flowMatched: !!reply.flowMatched
+      });
+    }
+
     const reply = await generateBotResponse(text, pageId, mockSender);
     const replyText = getReplyText(reply);
     if (shouldLockConversationAfterReply(replyText)) {
@@ -1356,6 +1373,36 @@ async function generateBotResponse(userText, pageId, senderId) {
   }
 }
 
+async function generateFlowOnlyResponse(userText, pageId, senderId) {
+  const pages = getPages();
+  const pageConfig = pages[pageId] || {};
+  const script = pageConfig.script || SCRIPT;
+
+  if (!chatHistory[senderId]) {
+    chatHistory[senderId] = [];
+  }
+
+  chatHistory[senderId].push({
+    role: "user",
+    content: userText
+  });
+
+  if (chatHistory[senderId].length > MAX_HISTORY) {
+    chatHistory[senderId] = chatHistory[senderId].slice(-MAX_HISTORY);
+  }
+
+  const hardFlowReply = buildAdsFlowReply(userText, script, pageConfig, pageId, senderId);
+  if (!hardFlowReply) {
+    return { text: "", images: [], flowMatched: false };
+  }
+
+  chatHistory[senderId].push({
+    role: "assistant",
+    content: hardFlowReply.text
+  });
+  return { ...hardFlowReply, flowMatched: true };
+}
+
 // =============================================
 //  DYNAMIC MULTI-TENANT MESSAGING LOGIC
 // =============================================
@@ -1382,6 +1429,35 @@ async function handleMessage(senderId, userText, pageId) {
       const pageName = pageConfig.name || pageId;
       trackUser(senderId, pageId, pageName, userText, "[BOT MUTED] Conversation locked after refusal reply.");
       console.log(`🔇 Bỏ qua tin nhắn từ khách ${senderId} vì cuộc trò chuyện đã bị khóa.`);
+      return;
+    }
+
+    if (isFlowOnlyMode(pageConfig)) {
+      const reply = await generateFlowOnlyResponse(userText, pageId, senderId);
+      const replyText = getReplyText(reply);
+      const replyImages = getReplyImages(reply);
+      const pageName = pageConfig.name || pageId;
+
+      if (!replyText && !replyImages.length) {
+        trackUser(senderId, pageId, pageName, userText, "[FLOW_ONLY] No matching hard flow, no reply sent.");
+        console.log(`Flow-only mode: no matching flow for ${senderId} on Page ${pageId}; no AI fallback.`);
+        return;
+      }
+
+      const parts = splitMessage(replyText, 2000);
+      for (const part of parts) {
+        await sendTextMessage(senderId, part, token);
+        console.log(`💬 Flow-only: đã gửi tin nhắn chữ cho khách ${senderId}`);
+        if (parts.length > 1) await sleep(500);
+      }
+
+      for (const imageUrl of replyImages) {
+        await sendImageMessage(senderId, imageUrl, token);
+        console.log(`🖼️ Flow-only: đã gửi ảnh cho khách ${senderId}: ${imageUrl}`);
+        await sleep(400);
+      }
+
+      trackUser(senderId, pageId, pageName, userText, formatReplyForHistory(reply));
       return;
     }
 
