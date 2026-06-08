@@ -310,12 +310,19 @@ function getAdsFlowState(pageId, senderId) {
   const key = `${pageId}:${senderId}`;
   if (!adsFlowStates[key]) {
     adsFlowStates[key] = {
+      activeFlowId: "",
       industry: "",
       experience: "",
       priceSent: false
     };
   }
   return adsFlowStates[key];
+}
+
+function resetAdsFlowProgress(state) {
+  state.industry = "";
+  state.experience = "";
+  state.priceSent = false;
 }
 
 function extractAdsExperience(userText) {
@@ -389,11 +396,24 @@ function joinFlowText(...parts) {
   return parts.map(part => String(part || "").trim()).filter(Boolean).join(" ").trim();
 }
 
+function normalizeAdsFlowConfig(flow, fallbackId) {
+  return {
+    ...flow,
+    id: flow.id || fallbackId
+  };
+}
+
 function getAdsFlowsFromPageConfig(pageConfig = {}) {
+  const flows = [];
   if (Array.isArray(pageConfig.adsFlows) && pageConfig.adsFlows.length) {
-    return pageConfig.adsFlows;
+    flows.push(...pageConfig.adsFlows
+      .filter(flow => flow && typeof flow === "object")
+      .map((flow, index) => normalizeAdsFlowConfig(flow, `ads-flow-${index + 1}`)));
   }
-  return [];
+  if (pageConfig.adsFlow && typeof pageConfig.adsFlow === "object") {
+    flows.push(normalizeAdsFlowConfig(pageConfig.adsFlow, "legacy-ads-flow"));
+  }
+  return flows;
 }
 
 function pickAdsFlow(userText, pageConfig = {}) {
@@ -409,16 +429,33 @@ function pickAdsFlow(userText, pageConfig = {}) {
     return keywords.some(keyword => text.includes(keyword));
   });
 
-  return matched || flows[0];
+  return matched || null;
+}
+
+function stripMatchedFlowKeyword(userText, flow) {
+  const text = normalizeText(userText);
+  const keywords = String(flow?.keywords || "")
+    .split(",")
+    .map(item => normalizeText(item))
+    .filter(Boolean);
+  const matchedKeyword = keywords.find(keyword => text.includes(keyword));
+  if (!matchedKeyword) return userText;
+  return text.replace(matchedKeyword, " ").replace(/\s+/g, " ").trim();
 }
 
 function buildAdsFlowReply(userText, script, pageConfig, pageId, senderId) {
-  const profile = getTenantProfile(script, pageConfig);
   const configuredFlows = getAdsFlowsFromPageConfig(pageConfig);
-  if (!profile.hasAdsPricing && !configuredFlows.length) return null;
+  if (!configuredFlows.length) return null;
 
+  const profile = getTenantProfile(script, pageConfig);
   const state = getAdsFlowState(pageId, senderId);
   const selectedFlow = pickAdsFlow(userText, pageConfig);
+  const activeFlow = configuredFlows.find(flow => flow.id && flow.id === state.activeFlowId) || null;
+  if (!selectedFlow && !activeFlow) return null;
+  if (selectedFlow?.id && selectedFlow.id !== state.activeFlowId) {
+    state.activeFlowId = selectedFlow.id;
+    resetAdsFlowProgress(state);
+  }
   const flow = {
     greeting: "Dạ em chào anh/chị ạ, anh/chị đang cần bên em hỗ trợ gì ạ?",
     keywords: "chạy quảng cáo, chạy ads, quảng cáo facebook, báo giá quảng cáo, giá chạy qc",
@@ -432,10 +469,11 @@ function buildAdsFlowReply(userText, script, pageConfig, pageId, senderId) {
     fallback: `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em tư vấn kỹ hơn cho mình ạ.`,
     sendPriceFirst: true,
     zaloOnlyAfterOk: true,
-    ...(selectedFlow || pageConfig.adsFlow || {})
+    ...(selectedFlow || activeFlow || pageConfig.adsFlow || {})
   };
   const text = normalizeText(userText);
-  const industry = extractIndustry(userText);
+  const industryText = selectedFlow ? stripMatchedFlowKeyword(userText, selectedFlow) : userText;
+  const industry = industryText ? extractIndustry(industryText) : "";
   const experience = extractAdsExperience(userText);
   const packageNumber = extractPackageNumber(userText);
   const asksGenericPackage = /\b(goi|gói)\b/.test(text);
