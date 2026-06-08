@@ -651,8 +651,12 @@ async function buildAdsFlowReplyWithAISelection(userText, script, pageConfig, pa
 
   const state = getAdsFlowState(pageId, senderId);
   const activeFlow = configuredFlows.find(flow => flow.id && flow.id === state.activeFlowId) || null;
+  if (activeFlow) {
+    return buildAdsFlowReply(userText, script, pageConfig, pageId, senderId, activeFlow);
+  }
+
   const keywordFlow = pickAdsFlow(userText, pageConfig);
-  if (keywordFlow || activeFlow) {
+  if (keywordFlow) {
     return buildAdsFlowReply(userText, script, pageConfig, pageId, senderId, keywordFlow);
   }
 
