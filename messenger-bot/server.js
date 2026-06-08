@@ -443,13 +443,85 @@ function stripMatchedFlowKeyword(userText, flow) {
   return text.replace(matchedKeyword, " ").replace(/\s+/g, " ").trim();
 }
 
-function buildAdsFlowReply(userText, script, pageConfig, pageId, senderId) {
+function getFlowClassifierLabels(flows = []) {
+  return flows.map((flow, index) => ({
+    id: flow.id,
+    name: String(flow.name || `Flow ${index + 1}`).trim(),
+    keywords: String(flow.keywords || "").trim()
+  }));
+}
+
+function parseFlowClassifierChoice(rawChoice, flows = []) {
+  const cleaned = normalizeText(rawChoice).replace(/[^a-z0-9_-]/g, "");
+  if (!cleaned || cleaned === "none" || cleaned === "no" || cleaned === "khong") return null;
+  return flows.find(flow => normalizeText(flow.id).replace(/[^a-z0-9_-]/g, "") === cleaned) || null;
+}
+
+async function chooseAdsFlowWithAI(userText, pageConfig, flows, config) {
+  const aiProvider = pageConfig.aiProvider || config.aiProvider || "openrouter";
+  const model = pageConfig.model || config.groqModel || "meta-llama/llama-3.1-8b-instruct";
+  const apiKeys = [];
+  if (pageConfig.apiKey) apiKeys.push(...parseProviderApiKeys(pageConfig.apiKey, aiProvider));
+  if (config.groqApiKey) apiKeys.push(...parseProviderApiKeys(config.groqApiKey, aiProvider));
+
+  const uniqueKeys = [...new Set(apiKeys)];
+  if (!uniqueKeys.length) return null;
+
+  const provider = normalizeAIProvider(aiProvider);
+  const endpoint = provider === "openrouter"
+    ? "https://openrouter.ai/api/v1/chat/completions"
+    : "https://api.groq.com/openai/v1/chat/completions";
+  const prompt = [
+    "Ban chi la bo chon flow, khong phai chatbot tra loi khach.",
+    "Doc tin nhan cua khach va danh sach flow da soan san.",
+    "Neu tin nhan phu hop voi mot flow, chi tra ve dung flow id.",
+    "Neu khong co flow phu hop, chi tra ve none.",
+    "Tuyet doi khong viet cau tu van, khong giai thich, khong them ky tu khac.",
+    "",
+    "Danh sach flow:",
+    JSON.stringify(getFlowClassifierLabels(flows), null, 2),
+    "",
+    `Tin nhan khach: ${String(userText || "").trim()}`
+  ].join("\n");
+
+  for (const key of uniqueKeys) {
+    try {
+      const headers = {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json"
+      };
+      if (provider === "openrouter") {
+        headers["HTTP-Referer"] = "https://nguyennamchat-production.up.railway.app";
+        headers["X-Title"] = "NguyenNamChat";
+      }
+      const response = await axios.post(endpoint, {
+        model,
+        temperature: 0,
+        max_tokens: 20,
+        messages: [
+          { role: "system", content: "Return exactly one flow id from the provided list, or none." },
+          { role: "user", content: prompt }
+        ]
+      }, { headers, timeout: 20000 });
+
+      const choice = response.data.choices?.[0]?.message?.content || "";
+      const selectedFlow = parseFlowClassifierChoice(choice, flows);
+      if (selectedFlow || normalizeText(choice).includes("none")) return selectedFlow;
+    } catch (err) {
+      console.warn("Flow classifier AI failed:", err.response?.data || err.message);
+    }
+  }
+
+  return null;
+}
+
+function buildAdsFlowReply(userText, script, pageConfig, pageId, senderId, forcedFlow = null) {
   const configuredFlows = getAdsFlowsFromPageConfig(pageConfig);
   if (!configuredFlows.length) return null;
 
   const profile = getTenantProfile(script, pageConfig);
   const state = getAdsFlowState(pageId, senderId);
-  const selectedFlow = pickAdsFlow(userText, pageConfig);
+  const selectedFlow = forcedFlow || pickAdsFlow(userText, pageConfig);
   const activeFlow = configuredFlows.find(flow => flow.id && flow.id === state.activeFlowId) || null;
   if (!selectedFlow && !activeFlow) return null;
   if (selectedFlow?.id && selectedFlow.id !== state.activeFlowId) {
@@ -571,6 +643,22 @@ function buildAdsFlowReply(userText, script, pageConfig, pageId, senderId) {
     text: hasFlowText(flow.fallback) ? flow.fallback : `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em tư vấn kỹ hơn cho mình ạ.`,
     images: []
   };
+}
+
+async function buildAdsFlowReplyWithAISelection(userText, script, pageConfig, pageId, senderId) {
+  const configuredFlows = getAdsFlowsFromPageConfig(pageConfig);
+  if (!configuredFlows.length) return null;
+
+  const state = getAdsFlowState(pageId, senderId);
+  const activeFlow = configuredFlows.find(flow => flow.id && flow.id === state.activeFlowId) || null;
+  const keywordFlow = pickAdsFlow(userText, pageConfig);
+  if (keywordFlow || activeFlow) {
+    return buildAdsFlowReply(userText, script, pageConfig, pageId, senderId, keywordFlow);
+  }
+
+  const selectedFlow = await chooseAdsFlowWithAI(userText, pageConfig, configuredFlows, getConfig());
+  if (!selectedFlow) return null;
+  return buildAdsFlowReply(userText, script, pageConfig, pageId, senderId, selectedFlow);
 }
 
 function getTenantProfile(script, pageConfig = {}) {
@@ -1430,7 +1518,7 @@ async function generateFlowOnlyResponse(userText, pageId, senderId) {
     chatHistory[senderId] = chatHistory[senderId].slice(-MAX_HISTORY);
   }
 
-  const hardFlowReply = buildAdsFlowReply(userText, script, pageConfig, pageId, senderId);
+  const hardFlowReply = await buildAdsFlowReplyWithAISelection(userText, script, pageConfig, pageId, senderId);
   if (!hardFlowReply) {
     return { text: "", images: [], flowMatched: false };
   }
