@@ -797,7 +797,7 @@ function getConfig() {
     fbAppId: process.env.FB_APP_ID || fileConfig.fbAppId || ORIGINAL_ENV.FB_APP_ID || "",
     fbAppSecret: process.env.FB_APP_SECRET || process.env.APP_SECRET || fileConfig.fbAppSecret || ORIGINAL_ENV.FB_APP_SECRET || "",
     verifyToken: process.env.VERIFY_TOKEN || fileConfig.verifyToken || ORIGINAL_ENV.VERIFY_TOKEN || "mysecrettoken123",
-    groqApiKey: fileConfig.groqApiKey || "",
+    groqApiKey: fileConfig.groqApiKey || process.env.GROQ_API_KEY || "",
     groqModel: fileConfig.groqModel || "meta-llama/llama-3.1-8b-instruct",
     aiProvider: fileConfig.aiProvider || "openrouter"
   };
