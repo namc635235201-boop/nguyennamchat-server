@@ -311,18 +311,46 @@ function getAdsFlowState(pageId, senderId) {
   if (!adsFlowStates[key]) {
     adsFlowStates[key] = {
       activeFlowId: "",
-      industry: "",
-      experience: "",
-      priceSent: false
+      step: 0
     };
   }
   return adsFlowStates[key];
 }
 
 function resetAdsFlowProgress(state) {
-  state.industry = "";
-  state.experience = "";
-  state.priceSent = false;
+  state.step = 0;
+}
+
+// Khôi phục step của ads flow từ lịch sử hội thoại khi state bị mất (vd: server restart)
+function recoverStateFromHistory(state, senderId) {
+  const history = chatHistory[senderId] || [];
+  if (state.step && state.step > 0) return; // Đã có trạng thái trong memory, không cần khôi phục
+
+  const botMessages = history
+    .filter(item => item.role === "assistant")
+    .map(item => normalizeText(item.content));
+
+  // Duyệt từ tin nhắn bot mới nhất đến cũ nhất để xác định câu hỏi gần nhất
+  for (let i = botMessages.length - 1; i >= 0; i--) {
+    const msg = botMessages[i];
+    if (msg.includes("trang ca nhan hay fanpage")) {
+      state.step = 3;
+      console.log(`♻️ Recovered ads flow step = 3 (about to answer Q3) for sender ${senderId}`);
+      return;
+    }
+    if (msg.includes("da tung chay quang cao chua")) {
+      state.step = 2;
+      console.log(`♻️ Recovered ads flow step = 2 (about to answer Q2) for sender ${senderId}`);
+      return;
+    }
+    if (msg.includes("linh vuc gi") && msg.includes("ngan sach")) {
+      state.step = 1;
+      console.log(`♻️ Recovered ads flow step = 1 (about to answer Q1) for sender ${senderId}`);
+      return;
+    }
+  }
+
+  state.step = 0;
 }
 
 function extractAdsExperience(userText) {
@@ -519,130 +547,64 @@ function buildAdsFlowReply(userText, script, pageConfig, pageId, senderId, force
   const configuredFlows = getAdsFlowsFromPageConfig(pageConfig);
   if (!configuredFlows.length) return null;
 
-  const profile = getTenantProfile(script, pageConfig);
   const state = getAdsFlowState(pageId, senderId);
   const selectedFlow = forcedFlow || pickAdsFlow(userText, pageConfig);
   const activeFlow = configuredFlows.find(flow => flow.id && flow.id === state.activeFlowId) || null;
   if (!selectedFlow && !activeFlow) return null;
-  if (selectedFlow?.id && selectedFlow.id !== state.activeFlowId) {
+
+  const isNewFlow = selectedFlow?.id && selectedFlow.id !== state.activeFlowId;
+  if (isNewFlow) {
+    state.activeFlowId = selectedFlow.id;
+    resetAdsFlowProgress(state);
+  } else if (selectedFlow && !state.activeFlowId) {
     state.activeFlowId = selectedFlow.id;
     resetAdsFlowProgress(state);
   }
-  const flow = {
-    greeting: "Dạ em chào anh/chị ạ, anh/chị đang cần bên em hỗ trợ gì ạ?",
-    keywords: "chạy quảng cáo, chạy ads, quảng cáo facebook, báo giá quảng cáo, giá chạy qc",
-    askIndustry: "Dạ anh/chị đang muốn chạy quảng cáo cho ngành nghề, sản phẩm hoặc dịch vụ gì ạ?",
-    askExperience: "Dạ trước giờ anh/chị đã từng chạy quảng cáo Facebook chưa ạ, hay đây là lần đầu mình chạy?",
-    sendPriceText: "Dạ em gửi anh/chị bảng giá tham khảo bên em ạ, anh/chị xem giúp em nhé.",
-    dailyPriceText: "Dạ bên em nhận chạy tối thiểu 200.000đ/ngày và cần chạy ít nhất 7 ngày ạ.",
-    afterPriceFollowup: "Dạ anh/chị đang muốn chạy cho ngành nghề, sản phẩm hoặc dịch vụ gì ạ?",
-    zaloSoft: `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em tư vấn kỹ hơn và lên phương án phù hợp cho mình ạ.`,
-    zaloPackage: `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em gửi chi tiết đúng gói này cho mình ạ.`,
-    fallback: `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em tư vấn kỹ hơn cho mình ạ.`,
-    sendPriceFirst: true,
-    zaloOnlyAfterOk: true,
-    ...(selectedFlow || activeFlow || pageConfig.adsFlow || {})
-  };
-  const text = normalizeText(userText);
-  const industryText = selectedFlow ? stripMatchedFlowKeyword(userText, selectedFlow) : userText;
-  const industry = industryText ? extractIndustry(industryText) : "";
-  const experience = extractAdsExperience(userText);
-  const packageNumber = extractPackageNumber(userText);
-  const asksGenericPackage = /\b(goi|gói)\b/.test(text);
-  const images = (flow.priceImage ? [flow.priceImage] : getScriptImages(script)).slice(0, 1);
-  const dailyText = profile.dailyLine ? cleanPhrase(stripScriptLabel(profile.dailyLine)) : "tối thiểu 200.000đ/ngày và cần chạy ít nhất 7 ngày";
 
-  if (industry && !state.industry) state.industry = industry;
-  if (experience && !state.experience) state.experience = experience;
+  // Khôi phục state từ lịch sử hội thoại nếu state trống (vd: server restart)
+  recoverStateFromHistory(state, senderId);
 
-  if (/^(alo|hi|hello|chao|xin chao|shop oi|ban oi|ad oi|admin oi)$/.test(text) && !state.industry && !state.priceSent) {
-    return { text: hasFlowText(flow.greeting) ? flow.greeting : flow.fallback, images: [] };
-  }
+  // Kịch bản câu hỏi luồng thu thập thông tin
+  const q1 = "Dạ anh/chị cần chạy quảng cáo cho lĩnh vực gì và dự kiến chạy ngân sách bao nhiêu ạ?";
+  const q2 = "Dạ trước giờ anh/chị đã từng chạy quảng cáo chưa ạ?";
+  const q3 = "Dạ anh/chị muốn chạy trên trang cá nhân hay fanpage ạ?";
+  const q4 = "Dạ, em đã ghi nhận đầy đủ thông tin của mình rồi ạ.\nAnh/chị vui lòng chờ trong giây lát, chuyên viên bên em sẽ liên hệ lại ngay. Hoặc để được hỗ trợ nhanh nhất, anh/chị có thể liên hệ trực tiếp qua Zalo 0898377771 để Nguyễn Nam Ads báo giá và triển khai chi tiết cho mình nhé ạ.\nEm cảm ơn anh/chị! 😊";
 
-  if (messageAsksDailyBudget(userText)) {
+  if (state.step === 0) {
+    state.step = 1;
     return {
-      text: joinFlowText(flow.dailyPriceText || `Dạ bên em nhận chạy ${dailyText} ạ.`, flow.afterPriceFollowup) || flow.fallback,
+      text: q1,
       images: []
     };
   }
 
-  if (asksGenericPackage && !packageNumber) {
+  if (state.step === 1) {
+    state.step = 2;
     return {
-      text: flow.fallback,
+      text: q2,
       images: []
     };
   }
 
-  if (packageNumber && !hasPackageDetailInScript(script, packageNumber)) {
+  if (state.step === 2) {
+    state.step = 3;
     return {
-      text: hasFlowText(flow.zaloPackage) ? flow.zaloPackage.replace("gói này", `gói ${packageNumber}`) : flow.fallback,
+      text: q3,
       images: []
     };
   }
 
-  if (flow.sendPriceFirst && messageAsksPrice(userText) && !state.priceSent) {
-    state.priceSent = true;
-    if (state.industry && !state.experience) {
-      return {
-        text: joinFlowText(flow.sendPriceText, flow.askExperience) || flow.fallback,
-        images
-      };
-    }
-    if (state.industry && state.experience) {
-      return {
-        text: hasFlowText(flow.sendPriceText) ? flow.sendPriceText : flow.fallback,
-        images
-      };
-    }
+  if (state.step === 3) {
+    // Hoàn thành luồng, kết thúc active flow
+    state.activeFlowId = "";
+    resetAdsFlowProgress(state);
     return {
-      text: joinFlowText(flow.sendPriceText, flow.afterPriceFollowup) || flow.fallback,
-      images
-    };
-  }
-
-  if (!state.industry) {
-    if (!hasFlowText(flow.askIndustry)) {
-      state.industry = "__skipped__";
-    } else {
-      return {
-        text: flow.askIndustry,
-        images: []
-      };
-    }
-  }
-
-  if (!state.experience) {
-    if (!hasFlowText(flow.askExperience)) {
-      state.experience = "__skipped__";
-    } else {
-      return {
-        text: hasFlowText(flow.askIndustry) && state.industry && state.industry !== "__skipped__"
-          ? `Dạ anh/chị đang kinh doanh ${state.industry} ạ. ${flow.askExperience}`
-          : flow.askExperience,
-        images: []
-      };
-    }
-  }
-
-  if (!state.priceSent) {
-    state.priceSent = true;
-    return {
-      text: hasFlowText(flow.sendPriceText) ? flow.sendPriceText : flow.fallback,
-      images
-    };
-  }
-
-  if (flow.zaloOnlyAfterOk && messageShowsBuyingIntent(userText)) {
-    return {
-      text: hasFlowText(flow.zaloSoft) ? flow.zaloSoft : flow.fallback,
+      text: q4,
       images: []
     };
   }
 
-  return {
-    text: hasFlowText(flow.fallback) ? flow.fallback : `Dạ anh/chị nhắn Zalo/Hotline ${profile.contact || "0898377771"} giúp em nhé, em tư vấn kỹ hơn cho mình ạ.`,
-    images: []
-  };
+  return null;
 }
 
 async function buildAdsFlowReplyWithAISelection(userText, script, pageConfig, pageId, senderId) {
@@ -1173,6 +1135,59 @@ app.post("/api/update-script", (req, res) => {
   res.json({ success: true });
 });
 
+// GET /api/knowledge-base: Trả về cấu trúc thư mục và file kịch bản cho bảng điều khiển
+app.get("/api/knowledge-base", (req, res) => {
+  const kbPath = path.join(__dirname, 'knowledge_base');
+  if (!fs.existsSync(kbPath)) {
+    fs.mkdirSync(kbPath, { recursive: true });
+    return res.json([]);
+  }
+  try {
+    const result = [];
+    const items = fs.readdirSync(kbPath);
+    for (const item of items) {
+      const itemPath = path.join(kbPath, item);
+      if (fs.statSync(itemPath).isDirectory()) {
+        const files = fs.readdirSync(itemPath)
+          .filter(f => f.endsWith('.md'))
+          .sort()
+          .map(file => ({
+            name: file,
+            content: fs.readFileSync(path.join(itemPath, file), 'utf-8')
+          }));
+        result.push({ type: 'folder', name: item, files });
+      }
+    }
+    const rootFiles = items
+      .filter(item => fs.statSync(path.join(kbPath, item)).isFile() && item.endsWith('.md'))
+      .sort()
+      .map(file => ({ name: file, content: fs.readFileSync(path.join(kbPath, file), 'utf-8') }));
+    if (rootFiles.length > 0) {
+      result.push({ type: 'folder', name: 'Kịch bản chung', files: rootFiles });
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/knowledge-base/save: Lưu nội dung file kịch bản từ bảng điều khiển
+app.post("/api/knowledge-base/save", (req, res) => {
+  const { folder, filename, content } = req.body;
+  if (!filename || content === undefined) {
+    return res.status(400).json({ error: "Missing filename or content" });
+  }
+  const kbPath = path.join(__dirname, 'knowledge_base');
+  const targetDir = folder ? path.join(kbPath, folder) : kbPath;
+  if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+  try {
+    fs.writeFileSync(path.join(targetDir, filename), content, 'utf-8');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // =============================================
 //  PLATFORM USER MANAGEMENT APIs
 // =============================================
@@ -1246,9 +1261,35 @@ app.delete('/api/platform-users/:fbUserId', adminAuth, (req, res) => {
   res.json({ success: true });
 });
 
-// API to list connected pages
+// API to list connected pages (returns merged script from knowledge_base if available)
 app.get("/api/connected-pages", (req, res) => {
-  res.json(Object.values(getPages()));
+  const kbPath = path.join(__dirname, 'knowledge_base');
+  let mergedScript = null;
+  if (fs.existsSync(kbPath)) {
+    try {
+      const parts = [];
+      const items = fs.readdirSync(kbPath);
+      for (const item of items) {
+        const itemPath = path.join(kbPath, item);
+        if (fs.statSync(itemPath).isDirectory()) {
+          const files = fs.readdirSync(itemPath).filter(f => f.endsWith('.md')).sort();
+          for (const file of files) {
+            parts.push(fs.readFileSync(path.join(itemPath, file), 'utf-8'));
+          }
+        }
+      }
+      const rootFiles = items.filter(item => fs.statSync(path.join(kbPath, item)).isFile() && item.endsWith('.md')).sort();
+      for (const file of rootFiles) {
+        parts.push(fs.readFileSync(path.join(kbPath, file), 'utf-8'));
+      }
+      if (parts.length > 0) mergedScript = parts.join('\n\n');
+    } catch (e) {}
+  }
+  const list = Object.values(getPages()).map(page => ({
+    ...page,
+    script: mergedScript || page.script || ''
+  }));
+  res.json(list);
 });
 
 // API to list all users (customers who chatted)
@@ -1418,6 +1459,34 @@ app.post("/webhook", async (req, res) => {
 // =============================================
 //  DYNAMIC MULTI-TENANT MESSAGING LOGIC
 // =============================================
+
+// Helper: đọc và ghép toàn bộ file .md trong knowledge_base thành một script
+function getKnowledgeBaseScript() {
+  const kbPath = path.join(__dirname, 'knowledge_base');
+  if (!fs.existsSync(kbPath)) return null;
+  try {
+    const parts = [];
+    const items = fs.readdirSync(kbPath).sort();
+    for (const item of items) {
+      const itemPath = path.join(kbPath, item);
+      if (fs.statSync(itemPath).isDirectory()) {
+        const files = fs.readdirSync(itemPath).filter(f => f.endsWith('.md')).sort();
+        for (const file of files) {
+          parts.push(fs.readFileSync(path.join(itemPath, file), 'utf-8'));
+        }
+      }
+    }
+    const rootFiles = items.filter(item => fs.statSync(path.join(kbPath, item)).isFile() && item.endsWith('.md')).sort();
+    for (const file of rootFiles) {
+      parts.push(fs.readFileSync(path.join(kbPath, file), 'utf-8'));
+    }
+    return parts.length > 0 ? parts.join('\n\n') : null;
+  } catch (e) {
+    console.error('Lỗi đọc knowledge_base:', e.message);
+    return null;
+  }
+}
+
 // =============================================
 //  BOT RESPONSE GENERATOR (SHARED LOGIC)
 // =============================================
@@ -1426,7 +1495,7 @@ async function generateBotResponse(userText, pageId, senderId) {
   const pageConfig = pages[pageId] || {};
   const config = getConfig();
 
-  let script = pageConfig.script || SCRIPT;
+  let script = getKnowledgeBaseScript() || pageConfig.script || SCRIPT;
   let aiProvider = pageConfig.aiProvider || config.aiProvider || "openrouter";
   let model = pageConfig.model || config.groqModel || "meta-llama/llama-3.1-8b-instruct";
   let temperature = pageConfig.temperature !== undefined ? parseFloat(pageConfig.temperature) : 0.3;
@@ -1507,7 +1576,7 @@ async function generateBotResponse(userText, pageId, senderId) {
 async function generateFlowOnlyResponse(userText, pageId, senderId) {
   const pages = getPages();
   const pageConfig = pages[pageId] || {};
-  const script = pageConfig.script || SCRIPT;
+  const script = getKnowledgeBaseScript() || pageConfig.script || SCRIPT;
 
   if (!chatHistory[senderId]) {
     chatHistory[senderId] = [];
