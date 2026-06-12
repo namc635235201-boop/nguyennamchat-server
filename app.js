@@ -6,51 +6,52 @@ let SHOP_NAME = "Fanpage cua ban";
 let BOT_AVATAR = "https://ui-avatars.com/api/?name=Fanpage&background=1877f2&color=fff&size=28";
 let SERVER_URL = localStorage.getItem('server_url') || ((window.location.protocol !== 'file:') ? window.location.origin : 'http://localhost:3000');
 
-const CLEAN_DEFAULT_CUSTOMER_SCRIPT = `Ban la nhan vien tu van cua "[TEN THUONG HIEU]".
+const CLEAN_DEFAULT_CUSTOMER_SCRIPT = `Bạn là nhân viên tư vấn của "[TÊN THƯƠNG HIỆU]".
 
-THONG TIN LIEN HE:
-- Hotline/Zalo: [SO HOTLINE/ZALO]
-- Dia chi: [DIA CHI]
+THÔNG TIN LIÊN HỆ:
+- Hotline/Zalo: [SỐ HOTLINE/ZALO]
+- Địa chỉ: [ĐỊA CHỈ]
 - Website: [WEBSITE]
 
-DICH VU / SAN PHAM CHINH:
-- [DICH VU HOAC SAN PHAM 1]
-- [DICH VU HOAC SAN PHAM 2]
-- [DICH VU HOAC SAN PHAM 3]
+DỊCH VỤ / SẢN PHẨM CHÍNH:
+- [DỊCH VỤ HOẶC SẢN PHẨM 1]
+- [DỊCH VỤ HOẶC SẢN PHẨM 2]
+- [DỊCH VỤ HOẶC SẢN PHẨM 3]
 
-BANG GIA / GOI DICH VU:
-- [GOI 1]: [GIA / MO TA]
-- [GOI 2]: [GIA / MO TA]
-- [GOI 3]: [GIA / MO TA]
+BẢNG GIÁ / GÓI DỊCH VỤ:
+- [GÓI 1]: [GIÁ / MÔ TẢ]
+- [GÓI 2]: [GIÁ / MÔ TẢ]
+- [GÓI 3]: [GIÁ / MÔ TẢ]
 
-MUC TIEU:
-Tu van nhu nguoi that, tra loi ngan gon, hoi dung nhu cau va huong khach qua Hotline/Zalo da cau hinh de trao doi nhanh hon.
+MỤC TIÊU:
+Tư vấn như người thật, trả lời ngắn gọn, hỏi đúng nhu cầu và hướng khách qua Hotline/Zalo đã cấu hình để trao đổi nhanh hơn.
 
-QUY TAC TRA LOI:
-- Moi lan tra loi 1-3 cau ngan.
-- Neu khach chao, phai chao lai va hoi khach can ho tro gi.
-- Neu khach hoi gia, bao dung bang gia trong kich ban, khong tu bia gia.
-- Neu khach hoi dich vu/san pham nao, bam theo dung noi dung khach hoi.
-- Neu chua du thong tin de bao gia, hoi them nhu cau va moi khach gui thong tin qua Hotline/Zalo da cau hinh.
-- Thinh thoang dung toi da 1 emoji phu hop, khong spam emoji.
-- Khong nhac dich vu ngoai kich ban neu khach khong hoi.
+QUY TẮC TRẢ LỜI:
+- Luôn trả lời bằng tiếng Việt có dấu đầy đủ.
+- Mỗi lần trả lời 1-3 câu ngắn.
+- Nếu khách chào, phải chào lại và hỏi khách cần hỗ trợ gì.
+- Nếu khách hỏi giá, báo đúng bảng giá trong kịch bản, không tự bịa giá.
+- Nếu khách hỏi dịch vụ/sản phẩm nào, bám theo đúng nội dung khách hỏi.
+- Nếu chưa đủ thông tin để báo giá, hỏi thêm nhu cầu và mời khách gửi thông tin qua Hotline/Zalo đã cấu hình.
+- Thỉnh thoảng dùng tối đa 1 emoji phù hợp, không spam emoji.
+- Không nhắc dịch vụ ngoài kịch bản nếu khách không hỏi.
 
-CAU CHAO MAU:
-"Da em chao anh/chi a 😊 Em la tu van vien cua [TEN THUONG HIEU]. Anh/chi can em ho tro phan nao a?"
+CÂU CHÀO MẪU:
+"Dạ em chào anh/chị ạ 😊 Em là tư vấn viên của [TÊN THƯƠNG HIỆU]. Anh/chị cần em hỗ trợ phần nào ạ?"
 
-KHI KHACH HOI HOTLINE / ZALO:
-"Da Hotline/Zalo ben em la [SO HOTLINE/ZALO] a."
+KHI KHÁCH HỎI HOTLINE / ZALO:
+"Dạ Hotline/Zalo bên em là [SỐ HOTLINE/ZALO] ạ."
 
-KHI KHACH HOI DIA CHI:
-"Da dia chi ben em o [DIA CHI] a."
+KHI KHÁCH HỎI ĐỊA CHỈ:
+"Dạ địa chỉ bên em ở [ĐỊA CHỈ] ạ."
 
-KHI KHACH HOI WEBSITE:
-"Da website ben em la [WEBSITE] a."
+KHI KHÁCH HỎI WEBSITE:
+"Dạ website bên em là [WEBSITE] ạ."
 
-KHONG DUOC LAM:
-- Khong dung thong tin, so dien thoai, dia chi hoac bang gia cua doanh nghiep khac.
-- Khong tra loi dai dong khi khach hoi don gian.
-- Khong tu tao gia, cam ket hoac chinh sach neu kich ban chua co.`;
+KHÔNG ĐƯỢC LÀM:
+- Không dùng thông tin, số điện thoại, địa chỉ hoặc bảng giá của doanh nghiệp khác.
+- Không trả lời dài dòng khi khách hỏi đơn giản.
+- Không tự tạo giá, cam kết hoặc chính sách nếu kịch bản chưa có.`;
 
 const PRODUCTS = [
   {
@@ -619,280 +620,21 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
   
-  document.getElementById(`tab-${tabName}`).classList.add('active');
-  document.getElementById(`content-${tabName}`).classList.add('active');
+  const tabEl = document.getElementById(`tab-${tabName}`);
+  const contentEl = document.getElementById(`content-${tabName}`);
+  if (tabEl) tabEl.classList.add('active');
+  if (contentEl) contentEl.classList.add('active');
   
   if (tabName === 'users') {
     loadPlatformUsers();
   } else if (tabName === 'orders') {
     loadOrdersForActivePage();
+  } else if (tabName === 'kb') {
+    loadKnowledgeBase();
   }
 }
 
-let scriptSections = [];
 
-const DEFAULT_SCRIPT_SECTIONS = [
-  {
-    title: "Chạy quảng cáo thuê Fanpage",
-    keywords: "chạy quảng cáo, chạy ads, thuê chạy quảng cáo, fanpage, báo giá quảng cáo",
-    imageUrl: "https://nguyennamchat-production.up.railway.app/uploads/1780819181252-gma6l45o.png",
-    content: "Khi khách hỏi chạy quảng cáo, hỏi trước khách muốn chạy trên Fanpage hay Facebook cá nhân. Nếu khách chọn Fanpage thì hỏi ngành nghề/sản phẩm, sau đó hỏi trước giờ đã từng chạy quảng cáo chưa. Khi đủ thông tin thì gửi bảng giá chạy quảng cáo thuê Fanpage và mời qua Zalo 0898377771."
-  },
-  {
-    title: "Tăng nhận diện thương hiệu cá nhân",
-    keywords: "facebook cá nhân, trang cá nhân, thương hiệu cá nhân, tăng nhận diện, cá nhân",
-    imageUrl: "https://nguyennamchat-production.up.railway.app/uploads/1780818941774-q70jinri.png",
-    content: "Nếu khách chọn Facebook cá nhân/trang cá nhân/cá nhân thì hỏi ngành nghề hoặc sản phẩm gì. Khi đã biết ngành nghề/sản phẩm thì gửi bảng giá tăng nhận diện thương hiệu cá nhân ngay, không hỏi thêm mục tiêu bán hàng/tuyển học viên/xây uy tín. Sau khi gửi bảng giá phải mời qua Zalo 0898377771."
-  },
-  {
-    title: "Dạy chạy quảng cáo Fanpage",
-    keywords: "học chạy quảng cáo, dạy chạy quảng cáo, tự chạy ads, khóa học ads, dạy fanpage",
-    imageUrl: "https://nguyennamchat-production.up.railway.app/uploads/1780819140727-s90jiamw.png",
-    content: "Khi khách hỏi học hoặc dạy chạy quảng cáo Fanpage, hỏi khách muốn học để tự chạy cho shop hay học để làm nghề. Sau đó hỏi trước giờ đã từng chạy quảng cáo hoặc biết cơ bản Facebook Ads chưa. Khi khách hỏi giá hoặc đã trả lời đủ thì gửi bảng giá dạy chạy quảng cáo Fanpage và mời qua Zalo 0898377771."
-  },
-  {
-    title: "Đào tạo thiết kế đồ họa",
-    keywords: "học thiết kế, thiết kế đồ họa, làm banner, làm ảnh quảng cáo, photoshop, canva",
-    imageUrl: "https://nguyennamchat-production.up.railway.app/uploads/1780819107225-y5u6r0r7.png",
-    content: "Khi khách hỏi học thiết kế hoặc thiết kế đồ họa, hỏi khách muốn học để tự làm hình ảnh cho shop hay học để phát triển nghề. Sau đó hỏi trước giờ đã từng học hoặc làm thiết kế cơ bản chưa. Khi khách hỏi giá hoặc đã trả lời đủ thì gửi bảng giá dạy thiết kế đồ họa và mời qua Zalo 0898377771."
-  }
-];
-
-function createScriptSection(data = {}) {
-  return {
-    id: data.id || `section-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    title: data.title || "",
-    keywords: data.keywords || "",
-    content: data.content || "",
-    imageUrl: data.imageUrl || ""
-  };
-}
-
-function renderScriptSections() {
-  const list = document.getElementById("script-section-list");
-  if (!list) return;
-
-  if (!scriptSections.length) {
-    list.innerHTML = '<div class="empty-state" style="padding:18px">Chưa có kịch bản con nào. Bấm "Thêm kịch bản" để tạo mục mới.</div>';
-    return;
-  }
-
-  list.innerHTML = scriptSections.map((section, index) => {
-    const id = escAttr(section.id);
-    return `
-      <div class="script-section-card" data-section-id="${id}">
-        <div class="script-section-title-row">
-          <label class="settings-label">Kịch bản ${index + 1}</label>
-          <button class="btn-outline" type="button" onclick="removeScriptSection('${id}')">Xóa mục</button>
-        </div>
-        <input class="settings-input" value="${escAttr(section.title)}" placeholder="Tên kịch bản" oninput="updateScriptSection('${id}', 'title', this.value)" />
-        <input class="settings-input" value="${escAttr(section.keywords)}" placeholder="Từ khóa nhận diện" oninput="updateScriptSection('${id}', 'keywords', this.value)" />
-        <textarea class="script-textarea" placeholder="Nội dung tư vấn riêng cho mục này..." oninput="updateScriptSection('${id}', 'content', this.value)">${escHtml(section.content)}</textarea>
-        <div class="script-image-row">
-          <input class="settings-input" value="${escAttr(section.imageUrl)}" placeholder="Link ảnh/bảng giá" oninput="updateScriptSection('${id}', 'imageUrl', this.value)" />
-          <button class="btn-outline" type="button" onclick="document.getElementById('script-image-file-${id}').click()">Tải ảnh</button>
-        </div>
-        <input type="file" id="script-image-file-${id}" accept="image/*" style="display:none" onchange="uploadScriptImage(this, '${id}')" />
-        <div id="image-upload-status-${id}" class="image-upload-status">${section.imageUrl ? `Ảnh hiện tại: ${escHtml(section.imageUrl)}` : ""}</div>
-      </div>`;
-  }).join("");
-}
-
-function updateScriptSection(id, field, value) {
-  const section = scriptSections.find(item => item.id === id);
-  if (!section) return;
-  section[field] = value;
-  buildScriptFromSections();
-}
-
-function addScriptSection(data = {}) {
-  scriptSections.push(createScriptSection(data));
-  renderScriptSections();
-  buildScriptFromSections();
-}
-
-function removeScriptSection(id) {
-  scriptSections = scriptSections.filter(item => item.id !== id);
-  renderScriptSections();
-  buildScriptFromSections();
-}
-
-function clearScriptSections() {
-  scriptSections = [];
-  renderScriptSections();
-  const hidden = document.getElementById("script-input");
-  if (hidden) hidden.value = "";
-}
-
-function buildScriptFromSections() {
-  const parts = [
-    "# NGUYENNAMADS - KỊCH BẢN TƯ VẤN THEO NHIỀU MỤC",
-    "",
-    "Bạn là nhân viên tư vấn của NGUYENNAMADS. Xưng em, gọi khách là anh/chị. Trả lời ngắn, tự nhiên, không nói mình là bot/AI.",
-    "Hotline/Zalo: 0898377771",
-    "",
-    "QUY TẮC BẮT BUỘC:",
-    "- Chỉ gửi câu trả lời dành cho khách, không gửi ghi chú nội bộ.",
-    "- Dựa vào từ khóa và nội dung từng mục để chọn đúng kịch bản con.",
-    "- Khi gửi bảng giá hoặc thông tin gói, phải kèm đúng ảnh của mục đó nếu mục đó có ảnh.",
-    "- Sau khi gửi bảng giá hoặc khách muốn chốt, phải mời khách qua Zalo 0898377771.",
-    "- Không tự bịa giá, cam kết, chính sách.",
-    ""
-  ];
-
-  scriptSections.forEach((section, index) => {
-    if (!section.title && !section.keywords && !section.content && !section.imageUrl) return;
-    parts.push(`## MỤC ${index + 1}: ${section.title || "Chưa đặt tên"}`);
-    if (section.keywords) parts.push(`Từ khóa nhận diện: ${section.keywords}`);
-    if (section.content) parts.push(section.content);
-    if (section.imageUrl) {
-      parts.push("Ảnh/bảng giá của mục này:");
-      parts.push(`[IMAGE: ${section.imageUrl}]`);
-    }
-    parts.push("");
-  });
-
-  const script = parts.join("\n").trim();
-  const hidden = document.getElementById("script-input");
-  if (hidden) hidden.value = script;
-  return script;
-}
-
-function hasUsableScriptSection() {
-  return scriptSections.some(section =>
-    section.title.trim() ||
-    section.keywords.trim() ||
-    section.content.trim() ||
-    section.imageUrl.trim()
-  );
-}
-
-function loadScriptSectionsFromScript(script) {
-  const raw = String(script || "").trim();
-  const hidden = document.getElementById("script-input");
-  if (hidden) hidden.value = raw;
-
-  scriptSections = [];
-  if (!raw) {
-    renderScriptSections();
-    return;
-  }
-
-  const sectionRe = /## MỤC \d+:\s*(.+?)\n([\s\S]*?)(?=\n## MỤC \d+:|$)/g;
-  let match;
-  while ((match = sectionRe.exec(raw))) {
-    const title = match[1].trim();
-    const chunk = match[2].trim();
-    const keywordMatch = chunk.match(/^Từ khóa nhận diện:\s*(.+)$/m);
-    const imageMatch = chunk.match(/\[IMAGE:\s*(https?:\/\/[^\]\s]+)\s*\]/i);
-    const content = chunk
-      .replace(/^Từ khóa nhận diện:\s*.+$/m, "")
-      .replace(/Ảnh\/bảng giá của mục này:\s*/i, "")
-      .replace(/\[IMAGE:\s*https?:\/\/[^\]\s]+\s*\]/i, "")
-      .trim();
-
-    scriptSections.push(createScriptSection({
-      title,
-      keywords: keywordMatch ? keywordMatch[1].trim() : "",
-      content,
-      imageUrl: imageMatch ? imageMatch[1].trim() : ""
-    }));
-  }
-
-  if (!scriptSections.length) {
-    scriptSections.push(createScriptSection({
-      title: "Kịch bản cũ",
-      keywords: "",
-      content: raw,
-      imageUrl: ""
-    }));
-  }
-
-  renderScriptSections();
-}
-
-async function uploadScriptImage(input, sectionId) {
-  const file = input.files && input.files[0];
-  const status = document.getElementById(`image-upload-status-${sectionId}`);
-  if (!file) return;
-
-  if (!file.type.startsWith("image/")) {
-    if (status) status.innerHTML = '<span style="color:#ff8080">Vui lòng chọn file ảnh.</span>';
-    input.value = "";
-    return;
-  }
-
-  if (file.size > 5 * 1024 * 1024) {
-    if (status) status.innerHTML = '<span style="color:#ff8080">Ảnh tối đa 5MB.</span>';
-    input.value = "";
-    return;
-  }
-
-  const form = new FormData();
-  form.append("image", file);
-  if (status) status.innerHTML = '<span style="color:#ffd700">Đang tải ảnh lên...</span>';
-
-  try {
-    const resp = await fetch(`${SERVER_URL}/api/upload-image`, {
-      method: "POST",
-      body: form
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.success) {
-      throw new Error(data.error || "Không thể tải ảnh lên.");
-    }
-
-    updateScriptSection(sectionId, "imageUrl", data.url);
-    renderScriptSections();
-    buildScriptFromSections();
-
-    const nextStatus = document.getElementById(`image-upload-status-${sectionId}`);
-    if (nextStatus) {
-      nextStatus.innerHTML = `
-        <div class="upload-preview">
-          <img src="${escAttr(data.url)}" alt="Ảnh đã tải" />
-          <span>Đã tải ảnh lên cho mục này.</span>
-        </div>`;
-    }
-  } catch (err) {
-    if (status) status.innerHTML = `<span style="color:#ff8080">Lỗi tải ảnh: ${escHtml(err.message)}</span>`;
-  } finally {
-    input.value = "";
-  }
-}
-
-function loadSample() {
-  const script = (() => {
-    scriptSections = DEFAULT_SCRIPT_SECTIONS.map(createScriptSection);
-    renderScriptSections();
-    return buildScriptFromSections();
-  })();
-  localStorage.setItem('chatbot_script', script);
-  if (activePageId) {
-    applyScript();
-  }
-}
-
-function clearScript() {
-  clearScriptSections();
-  localStorage.removeItem('chatbot_script');
-}
-
-// Sync script to backend for all connected pages
-async function syncScriptToServer(script) {
-  for (const page of connectedPages) {
-    try {
-      await fetch(`${SERVER_URL}/api/update-script`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageId: page.id, script: script })
-      });
-      console.log(`✅ Synced script to server for page: ${page.name}`);
-    } catch (err) {
-      console.warn(`⚠️ Could not sync script for page ${page.name}:`, err.message);
-    }
-  }
-}
 
 // =============================================
 //  CLEAR CHAT
@@ -1237,6 +979,217 @@ function updatePageSelectDropdown() {
   `).join('');
 }
 
+// =============================================
+//  KNOWLEDGE BASE FOLDER & FILE EXPLORER (3-column panel)
+// =============================================
+let kbStructure = [];
+let kbCurrentFolder = null;   // tên thư mục đang chọn
+let kbCurrentFile = null;     // { name, content } file đang chọn
+
+async function loadKnowledgeBase() {
+  const foldersEl = document.getElementById('kb-folders');
+  const filesEl   = document.getElementById('kb-files');
+  if (foldersEl) foldersEl.innerHTML = '<div style="text-align:center;padding:16px;color:#64748b;font-size:11px">⏳ Đang tải...</div>';
+
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/knowledge-base`);
+    kbStructure = await resp.json();
+    renderKbFolders();
+    
+    // Bảo toàn trạng thái thư mục/file đang chọn khi bấm Làm mới
+    if (kbCurrentFolder) {
+      const folderExists = kbStructure.some(f => f.name === kbCurrentFolder);
+      if (folderExists) {
+        renderKbFiles();
+        if (kbCurrentFile) {
+          const folderObj = kbStructure.find(f => f.name === kbCurrentFolder);
+          const fileExistsObj = folderObj ? folderObj.files.find(f => f.name === kbCurrentFile.name) : null;
+          if (fileExistsObj) {
+            const editor = document.getElementById('kb-editor');
+            if (editor) editor.value = fileExistsObj.content;
+            kbCurrentFile.content = fileExistsObj.content;
+          } else {
+            kbCurrentFile = null;
+            resetKbEditor();
+          }
+        }
+      } else {
+        kbCurrentFolder = null;
+        kbCurrentFile = null;
+        if (filesEl) filesEl.innerHTML = '';
+        resetKbEditor();
+      }
+    } else {
+      if (filesEl) filesEl.innerHTML = '<div style="text-align:center;padding:20px 8px;color:#475569;font-size:11px">← Chọn thư mục</div>';
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải knowledge base:', err);
+    if (foldersEl) foldersEl.innerHTML = '<div style="color:#ef4444;font-size:11px;padding:8px">⚠️ Lỗi kết nối</div>';
+  }
+}
+
+function resetKbEditor() {
+  const editor = document.getElementById('kb-editor');
+  const label  = document.getElementById('kb-editing-label');
+  const saveBtn= document.getElementById('kb-save-btn');
+  if (editor)  { editor.value = ''; editor.disabled = true; }
+  if (label)   label.textContent = 'Chọn file để chỉnh sửa';
+  if (saveBtn) saveBtn.style.display = 'none';
+}
+
+function renderKbFolders() {
+  const foldersEl = document.getElementById('kb-folders');
+  if (!foldersEl) return;
+  if (kbStructure.length === 0) {
+    foldersEl.innerHTML = '<div style="text-align:center;padding:16px;color:#475569;font-size:11px">Chưa có thư mục</div>';
+    return;
+  }
+  foldersEl.innerHTML = kbStructure.map(folder => `
+    <div class="kb-folder-item${kbCurrentFolder === folder.name ? ' kb-active' : ''}" onclick="selectKbFolder('${escAttr(folder.name)}')" style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:7px;cursor:pointer;font-size:12px;color:#e2e8f0;transition:background .15s;${kbCurrentFolder === folder.name ? 'background:#1e3a5f;color:#60a5fa;' : ''} ">
+      <span>📂</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(folder.name)}</span>
+      <span style="font-size:10px;color:#64748b">${folder.files.length}</span>
+    </div>
+  `).join('');
+}
+
+function selectKbFolder(folderName) {
+  kbCurrentFolder = folderName;
+  kbCurrentFile = null;
+  renderKbFolders();
+  renderKbFiles();
+  // Reset editor
+  const editor = document.getElementById('kb-editor');
+  const label  = document.getElementById('kb-editing-label');
+  const saveBtn= document.getElementById('kb-save-btn');
+  if (editor)  { editor.value = ''; editor.disabled = true; }
+  if (label)   label.textContent = 'Chọn file để chỉnh sửa';
+  if (saveBtn) saveBtn.style.display = 'none';
+}
+
+function renderKbFiles() {
+  const filesEl   = document.getElementById('kb-files');
+  const addFileBtn= document.getElementById('kb-add-file-btn');
+  if (!filesEl) return;
+  if (addFileBtn) addFileBtn.style.display = kbCurrentFolder ? 'block' : 'none';
+
+  const folder = kbStructure.find(f => f.name === kbCurrentFolder);
+  if (!folder || folder.files.length === 0) {
+    filesEl.innerHTML = '<div style="text-align:center;padding:16px;color:#475569;font-size:11px">Chưa có file</div>';
+    return;
+  }
+  filesEl.innerHTML = folder.files.map(file => `
+    <div class="kb-file-item${kbCurrentFile && kbCurrentFile.name === file.name ? ' kb-active' : ''}" onclick="selectKbFile('${escAttr(file.name)}')" style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:7px;cursor:pointer;font-size:11px;color:#cbd5e1;transition:background .15s;${kbCurrentFile && kbCurrentFile.name === file.name ? 'background:#1e3a5f;color:#60a5fa;' : ''}">
+      <span>📄</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(file.name)}</span>
+    </div>
+  `).join('');
+}
+
+function selectKbFile(fileName) {
+  const folder = kbStructure.find(f => f.name === kbCurrentFolder);
+  if (!folder) return;
+  const file = folder.files.find(f => f.name === fileName);
+  if (!file) return;
+  kbCurrentFile = { name: file.name, content: file.content };
+  renderKbFiles();
+  // Hiển thị nội dung trong editor
+  const editor = document.getElementById('kb-editor');
+  const label  = document.getElementById('kb-editing-label');
+  const saveBtn= document.getElementById('kb-save-btn');
+  if (editor)  { editor.value = file.content; editor.disabled = false; editor.focus(); }
+  if (label)   label.textContent = `📄 ${file.name}`;
+  if (saveBtn) saveBtn.style.display = 'inline-block';
+}
+
+async function saveKbFile() {
+  if (!kbCurrentFile || !kbCurrentFolder) return;
+  const editor   = document.getElementById('kb-editor');
+  const status   = document.getElementById('kb-save-status');
+  const saveBtn  = document.getElementById('kb-save-btn');
+  const text = editor ? editor.value : '';
+  if (saveBtn) saveBtn.disabled = true;
+  if (status)  status.innerHTML = '<span style="color:#fbbf24">⏳ Đang lưu...</span>';
+
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/knowledge-base/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder: kbCurrentFolder, filename: kbCurrentFile.name, content: text })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      if (status) status.innerHTML = '<span style="color:#6ee396">✅ Đã lưu!</span>';
+      // Cập nhật cache cục bộ
+      const folder = kbStructure.find(f => f.name === kbCurrentFolder);
+      if (folder) { const f = folder.files.find(f => f.name === kbCurrentFile.name); if (f) f.content = text; }
+      kbCurrentFile.content = text;
+      // Đồng bộ script tổng cho chat
+      try {
+        const syncResp = await fetch(`${SERVER_URL}/api/connected-pages`);
+        const pages = await syncResp.json();
+        const serverPage = pages.find(p => p.id === activePageId);
+        if (serverPage && serverPage.script) localStorage.setItem('chatbot_script', serverPage.script);
+      } catch(e) {}
+      setTimeout(() => { if (status) status.innerHTML = ''; }, 2500);
+    } else {
+      if (status) status.innerHTML = `<span style="color:#ff8080">⚠️ ${data.error}</span>`;
+    }
+  } catch (err) {
+    if (status) status.innerHTML = `<span style="color:#ff8080">⚠️ Lỗi: ${err.message}</span>`;
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+async function createKbFolder() {
+  const name = prompt('Tên thư mục mới (ví dụ: Chạy quảng cáo):');
+  if (!name || !name.trim()) return;
+  try {
+    // Tạo file placeholder để server tạo thư mục
+    const resp = await fetch(`${SERVER_URL}/api/knowledge-base/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder: name.trim(), filename: '.gitkeep', content: '' })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      await loadKnowledgeBase();
+      selectKbFolder(name.trim());
+    }
+  } catch (err) { alert('Lỗi tạo thư mục: ' + err.message); }
+}
+
+async function createKbFile() {
+  if (!kbCurrentFolder) return;
+  const name = prompt('Tên file mới (ví dụ: 01_LoiChao.md):');
+  if (!name || !name.trim()) return;
+  const filename = name.trim().endsWith('.md') ? name.trim() : name.trim() + '.md';
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/knowledge-base/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder: kbCurrentFolder, filename, content: `# ${filename}\n\n` })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      await loadKnowledgeBase();
+      selectKbFolder(kbCurrentFolder);
+      selectKbFile(filename);
+    }
+  } catch (err) { alert('Lỗi tạo file: ' + err.message); }
+}
+
+// --- giữ lại alias cũ phòng code khác dùng ---
+async function saveKBFile() { await saveKbFile(); }
+function goToRoot() { kbCurrentFolder = null; kbCurrentFile = null; renderKbFolders(); renderKbFiles(); }
+function goToFolder(n) { selectKbFolder(n); }
+function editKBFile(n) { selectKbFile(n); }
+
+// ==== DỪNG KHỐI KB CŨ – tiếp tục code changeActivePage ====
+// (dòng renderKB cũ đã bị thay thế hoàn toàn bên trên)
+
+
 // Switch active configuration tenant page
 async function changeActivePage(pageId) {
   if (!pageId) return;
@@ -1263,15 +1216,10 @@ async function changeActivePage(pageId) {
     
     if (serverPage) {
       if (serverPage.script) {
-        document.getElementById('script-input').value = serverPage.script;
-        loadScriptSectionsFromScript(serverPage.script);
         localStorage.setItem('chatbot_script', serverPage.script);
-        document.getElementById('script-status-bar').style.display = 'none';
-      } else {
-        document.getElementById('script-input').value = '';
-        clearScriptSections();
-        document.getElementById('script-status-bar').style.display = 'block';
       }
+      loadKnowledgeBase();
+      document.getElementById('script-status-bar').style.display = 'none';
       
       document.getElementById('model-select').value = serverPage.model || 'meta-llama/llama-3.1-8b-instruct';
       const aiModeSelect = document.getElementById('ai-mode-select');
@@ -1638,53 +1586,7 @@ function reauthorizeFacebook() {
   });
 }
 
-function applyScript() {
-  if (!hasUsableScriptSection()) {
-    const status = document.getElementById('apply-status');
-    const statusBar = document.getElementById('script-status-bar');
-    if (status) status.innerHTML = `<span style="color:#ff8080">⚠️ Vui lòng thêm ít nhất 1 kịch bản trước khi áp dụng!</span>`;
-    if (statusBar) statusBar.style.display = 'block';
-    return;
-  }
 
-  const scriptVal = buildScriptFromSections().trim();
-  const status = document.getElementById('apply-status');
-  const statusBar = document.getElementById('script-status-bar');
-  
-  if (!scriptVal) {
-    status.innerHTML = `<span style="color:#ff8080">⚠️ Vui lòng nhập kịch bản trước khi áp dụng!</span>`;
-    return;
-  }
-  
-  localStorage.setItem('chatbot_script', scriptVal);
-  
-  if (activePageId) {
-    fetch(`${SERVER_URL}/api/update-script`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pageId: activePageId, script: scriptVal })
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.success) {
-        status.innerHTML = `<span style="color:#6ee396">✅ Đã cập nhật kịch bản lên máy chủ!</span>`;
-        if (statusBar) statusBar.style.display = 'none';
-      } else {
-        status.innerHTML = `<span style="color:#ff8080">⚠️ Lỗi: ${data.error}</span>`;
-      }
-    })
-    .catch(err => {
-      status.innerHTML = `<span style="color:#6ee396">✅ Đã lưu kịch bản cục bộ offline!</span>`;
-      if (statusBar) statusBar.style.display = 'none';
-    });
-  } else {
-    status.innerHTML = `<span style="color:#ff8080">⚠️ Không tìm thấy Fanpage để cấu hình.</span>`;
-  }
-  
-  setTimeout(() => {
-    status.innerHTML = '';
-  }, 3000);
-}
 
 function saveSettings() {
   const shopNameVal = document.getElementById('shop-name-input').value.trim();
@@ -1823,7 +1725,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  loadScriptSectionsFromScript(localStorage.getItem('chatbot_script') || '');
+
 
   // Load connected pages from localStorage
   try {

@@ -11,7 +11,9 @@ taskkill /f /im ngrok.exe >nul 2>&1
 echo [*] Starting Node.js Server...
 start "NodeJS Server" cmd /k "cd /d %~dp0messenger-bot && node server.js"
 echo [*] Starting Ngrok Tunnel...
-start "Ngrok Tunnel" cmd /k "C:\Users\dell\AppData\Local\Microsoft\WinGet\Packages\Ngrok.Ngrok_Microsoft.Winget.Source_8wekyb3d8bbwe\ngrok.exe http 3000 --domain=waged-subject-thesis.ngrok-free.dev"
+set "NGROK_EXE=ngrok"
+if exist "%~dp0tools\ngrok\ngrok.exe" set "NGROK_EXE=%~dp0tools\ngrok\ngrok.exe"
+start "Ngrok Tunnel" cmd /k ""%NGROK_EXE%" http 3000"
 echo [*] Waiting for public link (5 seconds)...
 ping 127.0.0.1 -n 6 > nul
 

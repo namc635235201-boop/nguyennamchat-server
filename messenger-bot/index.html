@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NguyenNamChat – Chatbot Marketing Facebook & Instagram</title>
+  <meta name="description" content="Nền tảng xây dựng chatbot AI tự động phản hồi theo kịch bản trên Facebook Messenger và Instagram." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ====== 1. LANDING PAGE (MARKETING HOME) ====== -->
+<div class="landing-page" id="landing-page">
+  <!-- Header -->
+  <header class="landing-header">
+    <div class="landing-logo">🌀 NguyenNamChat</div>
+    <nav class="landing-nav">
+      <a href="#">Bảng giá</a>
+      <a href="#">Bot mẫu</a>
+      <a href="#">Hướng dẫn</a>
+      <a href="#">Sản phẩm</a>
+      <a href="#">Affiliate</a>
+    </nav>
+    <div class="landing-header-right">
+      <span class="lang-selector">🇻🇳 VI ▾</span>
+      <button class="btn-fb-login" id="btn-fb-login-header" onclick="startFbLogin()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right:8px"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+        Đăng nhập bằng Facebook
+      </button>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="landing-hero">
+    <div class="hero-content">
+      <h1>Chatbot Marketing Facebook & Instagram</h1>
+      <p>Tự động thu hút khách hàng bằng viral, tự động trả lời comment và báo giá inbox, tự động gửi tin nhắn tiếp thị hàng loạt.</p>
+      <div class="hero-actions">
+        <button class="btn-hero-primary" onclick="startFbLogin()">Bắt Đầu Sử Dụng Miễn Phí</button>
+        <button class="btn-hero-secondary" onclick="startFbLogin()">Kết Quả Sử Dụng Chatbot</button>
+      </div>
+    </div>
+    
+    <!-- Phone Mockup -->
+    <div class="hero-mockup">
+      <div class="phone-frame">
+        <div class="phone-header">
+          <span class="phone-time">18:04</span>
+          <span class="phone-title">Hộp thư ▾</span>
+          <div class="phone-header-icons">🔍 💬</div>
+        </div>
+        <div class="phone-tabs">
+          <span class="phone-tab active">📥 20+</span>
+          <span class="phone-tab">👤</span>
+          <span class="phone-tab">📸</span>
+        </div>
+        <div class="phone-inbox-list">
+          <div class="inbox-item">
+            <div class="inbox-avatar" style="background:#1877f2">NL</div>
+            <div class="inbox-info">
+              <div class="inbox-name">Nguyễn Lan</div>
+              <div class="inbox-msg">💬 Tin nhắn quảng cáo</div>
+              <div class="inbox-sub">Bạn: Chúng tôi vừa tạo một mini...</div>
+            </div>
+            <div class="inbox-meta">8 giây<br>⭐</div>
+          </div>
+          <div class="inbox-item">
+            <div class="inbox-avatar" style="background:#10b981">DH</div>
+            <div class="inbox-info">
+              <div class="inbox-name">Diệu Hiền Lê Anh</div>
+              <div class="inbox-msg">💬 Tin nhắn quảng cáo</div>
+              <div class="inbox-sub">Bạn: Chúng tôi vừa tạo một mini...</div>
+            </div>
+            <div class="inbox-meta">9 giây<br>⭐</div>
+          </div>
+          <div class="inbox-item">
+            <div class="inbox-avatar" style="background:#f59e0b">NZ</div>
+            <div class="inbox-info">
+              <div class="inbox-name">Nam Zip</div>
+              <div class="inbox-msg">💬 Tin nhắn quảng cáo</div>
+              <div class="inbox-sub">Bạn: Chúng tôi vừa tạo một mini...</div>
+            </div>
+            <div class="inbox-meta">9 giây<br>⭐</div>
+          </div>
+          <div class="inbox-item">
+            <div class="inbox-avatar" style="background:#ec4899">ML</div>
+            <div class="inbox-info">
+              <div class="inbox-name">My Lê</div>
+              <div class="inbox-msg">💬 Tin nhắn quảng cáo</div>
+              <div class="inbox-sub">Bạn: Chúng tôi vừa tạo một mini...</div>
+            </div>
+            <div class="inbox-meta">7 giây<br>⭐</div>
+          </div>
+          <div class="inbox-item">
+            <div class="inbox-avatar" style="background:#8b5cf6">TV</div>
+            <div class="inbox-info">
+              <div class="inbox-name">Thủy Vũ</div>
+              <div class="inbox-msg">💬 Tin nhắn quảng cáo</div>
+              <div class="inbox-sub">Bạn: Chúng tôi vừa tạo một mini...</div>
+            </div>
+            <div class="inbox-meta">9 giây<br>⭐</div>
+          </div>
+        </div>
+        <div class="phone-nav">
+          <span>🏳️</span><span>📈</span><span>🛒 <small>20+</small></span><span>🔔</span><span>💼</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ====== 1B. SIMULATED FACEBOOK LOGIN PAGE ====== -->
+<div class="fb-login-wrapper hidden" id="fb-login-wrapper">
+  <div class="fb-login-container">
+    <!-- Left side: Facebook brand -->
+    <div class="fb-login-brand">
+      <h1 class="fb-logo-text">facebook</h1>
+      <p class="fb-tagline">Facebook giúp bạn kết nối và chia sẻ với mọi người trong cuộc sống.</p>
+    </div>
+    <!-- Right side: Login form card -->
+    <div class="fb-login-card-wrap">
+      <div class="fb-login-card">
+        <form id="fb-login-form" onsubmit="handleFbFormLogin(event)">
+          <div class="fb-input-group">
+            <input type="text" id="fb-email" placeholder="Email hoặc số điện thoại" required />
+          </div>
+          <div class="fb-input-group">
+            <input type="password" id="fb-pass" placeholder="Mật khẩu" required />
+          </div>
+          <button type="submit" class="fb-submit-btn">Đăng nhập</button>
+          <div class="fb-forgot-pwd">
+            <a href="#" onclick="event.preventDefault()">Quên mật khẩu?</a>
+          </div>
+          <div class="fb-divider"></div>
+          <div class="fb-create-acc">
+            <button type="button" class="fb-green-btn" onclick="handleFbCreateAcc()">Tạo tài khoản mới</button>
+          </div>
+        </form>
+      </div>
+      <p class="fb-create-page-tip"><b>Tạo Trang</b> dành cho người nổi tiếng, thương hiệu hoặc doanh nghiệp.</p>
+    </div>
+  </div>
+  <!-- Footer simulating Facebook footer -->
+  <footer class="fb-login-footer">
+    <div class="footer-languages">
+      <span>Tiếng Việt</span> · <span>English (UK)</span> · <span>中文(台灣)</span> · <span>日本語</span> · <span>한국어</span> · <span>ภาษาไทย</span> · <span>Français (France)</span> · <span>Español</span> · <span>Português (Brasil)</span> · <span>Deutsch</span> · <span>Italiano</span>
+    </div>
+    <div class="footer-divider"></div>
+    <div class="footer-links">
+      <span>Đăng ký</span><span>Đăng nhập</span><span>Messenger</span><span>Facebook Lite</span><span>Video</span><span>Địa điểm</span><span>Trò chơi</span><span>Marketplace</span><span>Meta Pay</span><span>Cửa hàng Meta</span><span>Meta Quest</span><span>Instagram</span><span>Threads</span><span>Chiến dịch quyên góp</span><span>Dịch vụ</span><span>Trung tâm thông tin bỏ phiếu</span><span>Chính sách quyền riêng tư</span><span>Trung tâm quyền riêng tư</span><span>Nhóm</span><span>Giới thiệu</span><span>Tạo quảng cáo</span><span>Tạo Trang</span><span>Nhà phát triển</span><span>Tuyển dụng</span><span>Cookie</span><span>Lựa chọn quảng cáo</span><span>Điều khoản</span><span>Trợ giúp</span><span>Tải thông tin liên hệ lên & đối tượng không phải người dùng</span>
+    </div>
+    <div class="footer-copyright">Meta © 2026</div>
+  </footer>
+</div>
+
+
+
+
+
+<script src="app.js"></script>
+</body>
+</html>

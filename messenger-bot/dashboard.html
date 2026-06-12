@@ -73,48 +73,11 @@
       <select id="active-page-select" class="settings-input" style="background:#1e293b;color:#10b981;border:1px solid #334155;font-weight:600;padding:8px 12px;width:100%;border-radius:8px;font-size:14px;cursor:pointer;outline:none;" onchange="changeActivePage(this.value)"></select>
     </div>
 
-    <!-- Tabs -->
     <div class="tab-bar">
-      <button class="tab-btn active" onclick="switchTab('script')" id="tab-script">📋 Kịch bản</button>
       <button class="tab-btn" onclick="switchTab('settings')" id="tab-settings">⚙️ Cài đặt</button>
       <button class="tab-btn" onclick="switchTab('users')" id="tab-users">👥 Người dùng <span id="user-badge" class="badge" style="display:none">0</span></button>
       <button class="tab-btn" onclick="switchTab('orders')" id="tab-orders">📦 Đơn hàng <span id="order-badge" class="badge" style="display:none">0</span></button>
-    </div>
-
-    <!-- TAB: Script -->
-    <div class="tab-content active" id="content-script">
-      <div class="script-header">
-        <p class="script-desc">Tạo nhiều kịch bản con cho cùng một Fanpage. Mỗi mục có từ khóa, nội dung và ảnh riêng; khi áp dụng, tool sẽ tự ghép thành kịch bản tổng cho AI.</p>
-        <div class="script-actions">
-          <button class="btn-outline" onclick="addScriptSection()">+ Thêm kịch bản</button>
-          <button class="btn-outline" onclick="loadSample()">📄 Nạp mẫu</button>
-          <button class="btn-outline" onclick="clearScript()">🗑 Xóa</button>
-        </div>
-      </div>
-
-      <textarea id="script-input" class="script-textarea script-hidden-source" spellcheck="false"></textarea>
-
-      <div class="settings-group flow-builder" id="ads-flow-builder">
-        <div class="script-section-title-row">
-          <div>
-            <label class="settings-label">Flow cứng</label>
-            <div style="font-size:12px;color:#94a3b8;margin-top:6px">Mỗi flow là một nhánh trả lời cố định. Bot sẽ ưu tiên đi theo flow này trước, AI chỉ đoán ý khách và chọn đúng flow.</div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn-outline" type="button" onclick="addAdsFlow()">+ Thêm flow</button>
-            <button class="btn-outline" type="button" onclick="removeSelectedAdsFlow()">Xóa flow đã chọn</button>
-          </div>
-        </div>
-
-        <div id="ads-flow-list" class="script-section-list"></div>
-      </div>
-
-      <div id="script-section-list" class="script-section-list"></div>
-
-      <button class="btn-apply" onclick="applyScript()">
-        ✅ Áp dụng kịch bản
-      </button>
-      <div id="apply-status"></div>
+      <button class="tab-btn active" onclick="switchTab('kb')" id="tab-kb">📂 Knowledge Base</button>
     </div>
 
     <!-- TAB: Settings -->
@@ -255,7 +218,46 @@
       </div>
       <div id="orders-list"></div>
     </div>
-    
+
+    <!-- TAB: Knowledge Base -->
+    <div class="tab-content active" id="content-kb">
+      <div style="padding:8px 0 12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span style="font-size:13px;color:#94a3b8">📂 Quản lý kịch bản theo thư mục &amp; file</span>
+          <button class="btn-outline" onclick="loadKnowledgeBase()" style="font-size:11px;padding:4px 10px" title="Làm mới">🔄</button>
+        </div>
+
+        <!-- Folder + File Explorer -->
+        <div id="kb-explorer" style="display:flex;gap:10px;height:420px">
+          <!-- Cột trái: danh sách thư mục -->
+          <div id="kb-folder-list" style="width:200px;flex-shrink:0;background:#0f172a;border:1px solid #334155;border-radius:10px;overflow-y:auto;padding:8px 4px">
+            <div style="font-size:10px;color:#64748b;padding:4px 8px;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">Thư mục</div>
+            <div id="kb-folders" style="display:flex;flex-direction:column;gap:2px"></div>
+            <button onclick="createKbFolder()" style="width:100%;margin-top:8px;background:none;border:1px dashed #334155;border-radius:6px;color:#64748b;font-size:11px;padding:5px;cursor:pointer">+ Thư mục mới</button>
+          </div>
+
+          <!-- Cột giữa: danh sách file -->
+          <div id="kb-file-panel" style="width:200px;flex-shrink:0;background:#0f172a;border:1px solid #334155;border-radius:10px;overflow-y:auto;padding:8px 4px">
+            <div style="font-size:10px;color:#64748b;padding:4px 8px;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em">File</div>
+            <div id="kb-files" style="display:flex;flex-direction:column;gap:2px">
+              <div style="text-align:center;padding:20px 8px;color:#475569;font-size:11px">← Chọn thư mục</div>
+            </div>
+            <button id="kb-add-file-btn" onclick="createKbFile()" style="display:none;width:100%;margin-top:8px;background:none;border:1px dashed #334155;border-radius:6px;color:#64748b;font-size:11px;padding:5px;cursor:pointer">+ File mới</button>
+          </div>
+
+          <!-- Cột phải: soạn thảo nội dung file -->
+          <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span id="kb-editing-label" style="font-size:12px;color:#94a3b8;flex:1">Chọn file để chỉnh sửa</span>
+              <button id="kb-save-btn" onclick="saveKbFile()" style="display:none;background:#1877f2;border:none;border-radius:7px;color:#fff;font-size:12px;padding:5px 14px;cursor:pointer;font-weight:600">💾 Lưu</button>
+            </div>
+            <textarea id="kb-editor" placeholder="Chọn một file .md ở bên trái để chỉnh sửa nội dung..." style="flex:1;width:100%;box-sizing:border-box;background:#0f172a;border:1px solid #334155;border-radius:10px;color:#f1f5f9;font-size:12px;font-family:'Courier New',monospace;padding:12px;resize:none;line-height:1.6;outline:none" disabled></textarea>
+            <div id="kb-save-status" style="font-size:11px;text-align:right;min-height:16px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Logout Button -->
     <button class="btn-logout" onclick="handleLogout()">🚪 Đăng xuất</button>
 
@@ -282,7 +284,7 @@
 
     <!-- Script status bar -->
     <div class="script-status-bar" id="script-status-bar">
-      ⚠️ Chưa có kịch bản. Hãy viết kịch bản ở tab <b>📋 Kịch bản</b> bên trái rồi nhấn <b>Áp dụng</b>.
+      ⚠️ Chưa có kịch bản. Hãy cấu hình kịch bản ở tab <b>📂 Knowledge Base</b> bên trái.
     </div>
 
     <!-- Messages -->
